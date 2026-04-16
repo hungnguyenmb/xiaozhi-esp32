@@ -2,6 +2,7 @@
 #define _BOARD_CONFIG_H_
 
 #include <driver/gpio.h>
+#include <driver/uart.h>
 
 #define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
@@ -55,5 +56,16 @@
 
 // A MCP Test: Control a lamp
 #define LAMP_GPIO GPIO_NUM_18
+
+// UART bridge to Arduino Nano motor controller.
+// Header labels on the board expose these as TXD/RXD and they are unused
+// by the bread-compact-wifi profile.
+#define CAR_UART_TXD GPIO_NUM_43
+#define CAR_UART_RXD GPIO_NUM_44
+#define CAR_UART_RTS UART_PIN_NO_CHANGE
+#define CAR_UART_CTS UART_PIN_NO_CHANGE
+#define CAR_UART_PORT_NUM UART_NUM_1
+#define CAR_UART_BAUD_RATE (9600)
+#define CAR_UART_BUF_SIZE (256)
 
 #endif // _BOARD_CONFIG_H_

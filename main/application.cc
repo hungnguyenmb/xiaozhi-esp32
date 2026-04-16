@@ -433,10 +433,15 @@ void Application::CheckNewVersion() {
         retry_delay = 10; // Reset retry delay
 
         if (ota_->HasNewVersion()) {
+#if CONFIG_XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE
+            ESP_LOGW(TAG, "New firmware version %s available, but auto-upgrade is disabled",
+                ota_->GetFirmwareVersion().c_str());
+#else
             if (UpgradeFirmware(ota_->GetFirmwareUrl(), ota_->GetFirmwareVersion())) {
                 return; // This line will never be reached after reboot
             }
             // If upgrade failed, continue to normal operation
+#endif
         }
 
         // No new version, mark the current version as valid
@@ -1113,4 +1118,3 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
-

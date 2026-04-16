@@ -1,0 +1,385 @@
+#include "oled_face_display.h"
+
+#include "assets/lang_config.h"
+#include "lvgl_theme.h"
+
+#include <algorithm>
+
+#include <esp_log.h>
+
+#define TAG "OledFaceDisplay"
+
+namespace {
+
+constexpr int kAnimPeriodMs = 120;
+constexpr int kLeftEyeCenterX = 38;
+constexpr int kRightEyeCenterX = 90;
+constexpr int kEyesCenterY = 24;
+constexpr int kMouthCenterX = 64;
+constexpr int kMouthCenterY = 47;
+
+}  // namespace
+
+OledFaceDisplay::OledFaceDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+    int width, int height, bool mirror_x, bool mirror_y)
+    : OledDisplay(panel_io, panel, width, height, mirror_x, mirror_y) {
+}
+
+OledFaceDisplay::~OledFaceDisplay() {
+    if (anim_timer_ != nullptr) {
+        lv_timer_del(anim_timer_);
+        anim_timer_ = nullptr;
+    }
+    if (root_ != nullptr) {
+        lv_obj_del(root_);
+        root_ = nullptr;
+        face_layer_ = nullptr;
+    }
+}
+
+void OledFaceDisplay::SetupUI() {
+    if (setup_ui_called_) {
+        ESP_LOGW(TAG, "SetupUI() called multiple times, skipping duplicate call");
+        return;
+    }
+
+    Display::SetupUI();
+    DisplayLockGuard lock(this);
+
+    auto screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_bg_color(screen, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+    root_ = lv_obj_create(screen);
+    lv_obj_set_size(root_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_opa(root_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(root_, 0, 0);
+    lv_obj_set_style_pad_all(root_, 0, 0);
+    lv_obj_set_scrollbar_mode(root_, LV_SCROLLBAR_MODE_OFF);
+
+    face_layer_ = lv_obj_create(root_);
+    lv_obj_set_size(face_layer_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_bg_opa(face_layer_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(face_layer_, 0, 0);
+    lv_obj_set_style_pad_all(face_layer_, 0, 0);
+    lv_obj_set_scrollbar_mode(face_layer_, LV_SCROLLBAR_MODE_OFF);
+
+    anim_timer_ = lv_timer_create(AnimationTimerCb, kAnimPeriodMs, this);
+    if (anim_timer_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create animation timer");
+    }
+
+    RenderFace();
+}
+
+void OledFaceDisplay::SetStatus(const char* status) {
+    DisplayLockGuard lock(this);
+    if (status != nullptr && strcmp(status, Lang::Strings::LISTENING) == 0) {
+        activity_mode_ = ActivityMode::LISTENING;
+    } else if (status != nullptr && strcmp(status, Lang::Strings::SPEAKING) == 0) {
+        activity_mode_ = ActivityMode::SPEAKING;
+    } else {
+        activity_mode_ = ActivityMode::IDLE;
+    }
+    ResetAnimation();
+    RenderFace();
+}
+
+void OledFaceDisplay::ShowNotification(const char* notification, int duration_ms) {
+    (void)notification;
+    (void)duration_ms;
+}
+
+void OledFaceDisplay::SetChatMessage(const char* role, const char* content) {
+    (void)role;
+    (void)content;
+}
+
+void OledFaceDisplay::SetEmotion(const char* emotion) {
+    DisplayLockGuard lock(this);
+    current_emotion_ = (emotion != nullptr && emotion[0] != '\0') ? emotion : "neutral";
+    ResetAnimation();
+    RenderFace();
+}
+
+void OledFaceDisplay::SetPowerSaveMode(bool on) {
+    DisplayLockGuard lock(this);
+    power_save_mode_ = on;
+    if (on) {
+        activity_mode_ = ActivityMode::IDLE;
+    }
+    ResetAnimation();
+    RenderFace();
+}
+
+void OledFaceDisplay::UpdateStatusBar(bool update_all) {
+    (void)update_all;
+}
+
+void OledFaceDisplay::AnimationTimerCb(lv_timer_t* timer) {
+    auto* self = static_cast<OledFaceDisplay*>(lv_timer_get_user_data(timer));
+    if (self != nullptr) {
+        self->OnAnimationTick();
+    }
+}
+
+void OledFaceDisplay::OnAnimationTick() {
+    animation_tick_++;
+    RenderFace();
+}
+
+void OledFaceDisplay::ResetAnimation() {
+    animation_tick_ = 0;
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::GetBasePreset(const std::string& emotion) const {
+    if (emotion == "happy") {
+        return {EyeStyle::OPEN, EyeStyle::OPEN, MouthStyle::SMILE, true, 26};
+    }
+    if (emotion == "laughing") {
+        return {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_LARGE, false, 0};
+    }
+    if (emotion == "funny") {
+        return {EyeStyle::OPEN, EyeStyle::SMALL, MouthStyle::SMILE, true, 18};
+    }
+    if (emotion == "sad") {
+        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::FLAT, true, 28};
+    }
+    if (emotion == "angry") {
+        return {EyeStyle::SQUINT, EyeStyle::SQUINT, MouthStyle::FLAT, false, 0};
+    }
+    if (emotion == "crying") {
+        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::OPEN_SMALL, true, 30};
+    }
+    if (emotion == "loving") {
+        return {EyeStyle::WIDE, EyeStyle::WIDE, MouthStyle::KISS, true, 24};
+    }
+    if (emotion == "embarrassed") {
+        return {EyeStyle::SMALL, EyeStyle::SMALL, MouthStyle::SMALL, true, 18};
+    }
+    if (emotion == "surprised") {
+        return {EyeStyle::WIDE, EyeStyle::WIDE, MouthStyle::OPEN_SMALL, false, 0};
+    }
+    if (emotion == "shocked") {
+        return {EyeStyle::WIDE, EyeStyle::WIDE, MouthStyle::OPEN_LARGE, false, 0};
+    }
+    if (emotion == "thinking") {
+        return {EyeStyle::SMALL, EyeStyle::OPEN, MouthStyle::SMIRK_RIGHT, true, 24};
+    }
+    if (emotion == "winking") {
+        return {EyeStyle::CLOSED, EyeStyle::OPEN, MouthStyle::SMILE, false, 0};
+    }
+    if (emotion == "cool") {
+        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::SMIRK_RIGHT, false, 0};
+    }
+    if (emotion == "relaxed") {
+        return {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::SMALL, true, 30};
+    }
+    if (emotion == "delicious") {
+        return {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_SMALL, true, 20};
+    }
+    if (emotion == "kissy") {
+        return {EyeStyle::HAPPY, EyeStyle::CLOSED, MouthStyle::KISS, false, 0};
+    }
+    if (emotion == "confident") {
+        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::SMIRK_LEFT, false, 0};
+    }
+    if (emotion == "sleepy") {
+        return {EyeStyle::CLOSED, EyeStyle::CLOSED, MouthStyle::SMALL, false, 0};
+    }
+    if (emotion == "silly") {
+        return {EyeStyle::WIDE, EyeStyle::SMALL, MouthStyle::OPEN_SMALL, true, 14};
+    }
+    if (emotion == "confused") {
+        return {EyeStyle::OPEN, EyeStyle::HALF, MouthStyle::FLAT, true, 16};
+    }
+    return {EyeStyle::OPEN, EyeStyle::OPEN, MouthStyle::SMALL, true, 24};
+}
+
+bool OledFaceDisplay::IsBlinkFrame(const FacePreset& preset) const {
+    if (!preset.auto_blink || preset.blink_period_ticks == 0) {
+        return false;
+    }
+    uint32_t phase = animation_tick_ % preset.blink_period_ticks;
+    return phase == 0 || phase == 1;
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
+    std::string emotion = power_save_mode_ ? "sleepy" : current_emotion_;
+    auto preset = GetBasePreset(emotion);
+
+    if (emotion == "winking") {
+        preset.left_eye = (animation_tick_ / 6) % 2 == 0 ? EyeStyle::CLOSED : EyeStyle::OPEN;
+    } else if (emotion == "kissy") {
+        preset.right_eye = (animation_tick_ / 6) % 2 == 0 ? EyeStyle::CLOSED : EyeStyle::OPEN;
+    } else if (emotion == "shocked" || emotion == "surprised") {
+        preset.mouth = (animation_tick_ / 2) % 2 == 0 ? MouthStyle::OPEN_SMALL : MouthStyle::OPEN_LARGE;
+    } else if (emotion == "thinking") {
+        preset.mouth = (animation_tick_ / 4) % 2 == 0 ? MouthStyle::SMIRK_RIGHT : MouthStyle::FLAT;
+    }
+
+    if (activity_mode_ == ActivityMode::LISTENING) {
+        if ((animation_tick_ / 2) % 2 == 0) {
+            if (preset.left_eye == EyeStyle::OPEN) preset.left_eye = EyeStyle::WIDE;
+            if (preset.right_eye == EyeStyle::OPEN) preset.right_eye = EyeStyle::WIDE;
+            if (preset.left_eye == EyeStyle::SMALL) preset.left_eye = EyeStyle::OPEN;
+            if (preset.right_eye == EyeStyle::SMALL) preset.right_eye = EyeStyle::OPEN;
+        }
+        if (preset.mouth == MouthStyle::OPEN_LARGE) {
+            preset.mouth = MouthStyle::OPEN_SMALL;
+        }
+    } else if (activity_mode_ == ActivityMode::SPEAKING) {
+        uint32_t phase = animation_tick_ % 4;
+        if (phase == 0 || phase == 2) {
+            preset.mouth = MouthStyle::OPEN_SMALL;
+        } else {
+            preset.mouth = MouthStyle::OPEN_LARGE;
+        }
+    } else if (IsBlinkFrame(preset)) {
+        preset.left_eye = EyeStyle::CLOSED;
+        preset.right_eye = EyeStyle::CLOSED;
+    }
+
+    return preset;
+}
+
+lv_obj_t* OledFaceDisplay::CreateFilledEllipse(int x, int y, int width, int height) {
+    lv_obj_t* obj = lv_obj_create(face_layer_);
+    lv_obj_set_pos(obj, x, y);
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(obj, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    return obj;
+}
+
+lv_obj_t* OledFaceDisplay::CreateOutlineEllipse(int x, int y, int width, int height, int border_width) {
+    lv_obj_t* obj = lv_obj_create(face_layer_);
+    lv_obj_set_pos(obj, x, y);
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(obj, border_width, 0);
+    lv_obj_set_style_border_color(obj, lv_color_black(), 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    return obj;
+}
+
+void OledFaceDisplay::DrawEye(int center_x, int center_y, EyeStyle style) {
+    int width = 24;
+    int height = 18;
+    int y_offset = 0;
+
+    switch (style) {
+    case EyeStyle::OPEN:
+        width = 24;
+        height = 18;
+        break;
+    case EyeStyle::WIDE:
+        width = 28;
+        height = 21;
+        break;
+    case EyeStyle::SMALL:
+        width = 18;
+        height = 12;
+        break;
+    case EyeStyle::HALF:
+        width = 24;
+        height = 10;
+        y_offset = 3;
+        break;
+    case EyeStyle::SQUINT:
+        width = 24;
+        height = 6;
+        y_offset = 5;
+        break;
+    case EyeStyle::HAPPY:
+        width = 24;
+        height = 8;
+        y_offset = 4;
+        break;
+    case EyeStyle::CLOSED:
+        width = 24;
+        height = 4;
+        y_offset = 6;
+        break;
+    }
+
+    CreateFilledEllipse(center_x - (width / 2), center_y - (height / 2) + y_offset, width, height);
+}
+
+void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
+    int width = 16;
+    int height = 4;
+    int x_offset = 0;
+    bool outline = false;
+    int border_width = 2;
+
+    switch (style) {
+    case MouthStyle::FLAT:
+        width = 16;
+        height = 3;
+        break;
+    case MouthStyle::SMALL:
+        width = 10;
+        height = 4;
+        break;
+    case MouthStyle::SMILE:
+        width = 22;
+        height = 5;
+        break;
+    case MouthStyle::OPEN_SMALL:
+        width = 10;
+        height = 8;
+        outline = true;
+        break;
+    case MouthStyle::OPEN_LARGE:
+        width = 14;
+        height = 12;
+        outline = true;
+        break;
+    case MouthStyle::KISS:
+        width = 8;
+        height = 8;
+        outline = true;
+        border_width = 2;
+        break;
+    case MouthStyle::SMIRK_LEFT:
+        width = 14;
+        height = 4;
+        x_offset = -5;
+        break;
+    case MouthStyle::SMIRK_RIGHT:
+        width = 14;
+        height = 4;
+        x_offset = 5;
+        break;
+    }
+
+    int x = center_x - (width / 2) + x_offset;
+    int y = center_y - (height / 2);
+    if (outline) {
+        CreateOutlineEllipse(x, y, width, height, border_width);
+    } else {
+        CreateFilledEllipse(x, y, width, height);
+    }
+}
+
+void OledFaceDisplay::RenderFace() {
+    if (face_layer_ == nullptr) {
+        return;
+    }
+
+    lv_obj_clean(face_layer_);
+
+    auto preset = ResolveAnimatedPreset();
+    DrawEye(kLeftEyeCenterX, kEyesCenterY, preset.left_eye);
+    DrawEye(kRightEyeCenterX, kEyesCenterY, preset.right_eye);
+    DrawMouth(kMouthCenterX, kMouthCenterY, preset.mouth);
+}

@@ -1,12 +1,13 @@
 #include "wifi_board.h"
 #include "codecs/no_audio_codec.h"
-#include "display/oled_display.h"
+#include "display/oled_face_display.h"
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
 #include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
+#include "car_uart_controller.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -97,7 +98,7 @@ private:
         ESP_LOGI(TAG, "Turning display on");
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
-        display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+        display_ = new OledFaceDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
     }
 
     void InitializeButtons() {
@@ -150,6 +151,7 @@ private:
     // 物联网初始化，逐步迁移到 MCP 协议
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
+        static CarUartController car_controller(CAR_UART_PORT_NUM, CAR_UART_TXD, CAR_UART_RXD, CAR_UART_BAUD_RATE, CAR_UART_BUF_SIZE);
     }
 
 public:

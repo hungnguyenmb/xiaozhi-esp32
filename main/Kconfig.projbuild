@@ -6,6 +6,14 @@ config OTA_URL
     help
         The application will access this URL to check for new firmwares and server address.
 
+config XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE
+    bool "Disable automatic firmware upgrade"
+    default n
+    help
+        Keep OTA version/config checks enabled, but do not automatically download
+        and install a newer firmware image. This is useful for local custom builds
+        that still need Xiaozhi server configuration, MQTT/WebSocket setup, and MCP.
+
 choice
     prompt "Flash Assets"
     default FLASH_DEFAULT_ASSETS if !USE_EMOTE_MESSAGE_STYLE
