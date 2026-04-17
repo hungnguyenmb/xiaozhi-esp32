@@ -25,10 +25,11 @@ private:
     static constexpr int kDefaultHappyWiggleMs = 620;
     static constexpr int kDefaultSadBackoffMs = 520;
     static constexpr int kDefaultDriftMs = 650;
+    static constexpr int kDefaultDrift180Ms = 3000;
     static constexpr int kDefaultWheelTestMs = 450;
     static constexpr int kDefaultLineLedProbeMs = 900;
     static constexpr int kMinMotionMs = 80;
-    static constexpr int kMaxMotionMs = 1500;
+    static constexpr int kMaxMotionMs = 3500;
 
     uart_port_t uart_num_;
     gpio_num_t tx_pin_;
@@ -118,6 +119,12 @@ private:
         }
         if (command == "DRIFT_RIGHT") {
             return "drift_right";
+        }
+        if (command == "DRIFT_180_LEFT") {
+            return "drift_180_left";
+        }
+        if (command == "DRIFT_180_RIGHT") {
+            return "drift_180_right";
         }
         if (command == "LEFT_WHEEL_FORWARD") {
             return "left_wheel_forward";
@@ -441,6 +448,14 @@ public:
             BuildTaskMotionToolDescription("Perform a short right drift-like skid turn with a built-in multi-phase motion profile on the Arduino Nano. Use this only when the user explicitly asks to drift, powerslide, or do a flashy skid turn.", true),
             "DRIFT_RIGHT",
             kDefaultDriftMs);
+        RegisterTimedMotionTool("self.car.drift_180_left",
+            BuildTaskMotionToolDescription("Perform a left one-eighty drift maneuver with a fast ramp-up, short charge, quick flick, then the existing built-in drift profile, stopping with encoder cutoff near one hundred eighty degrees. Use this only when the user clearly asks for a one-eighty spin or half-turn drift.", true),
+            "DRIFT_180_LEFT",
+            kDefaultDrift180Ms);
+        RegisterTimedMotionTool("self.car.drift_180_right",
+            BuildTaskMotionToolDescription("Perform a right one-eighty drift maneuver with a fast ramp-up, short charge, quick flick, then the existing built-in drift profile, stopping with encoder cutoff near one hundred eighty degrees. Use this only when the user clearly asks for a one-eighty spin or half-turn drift.", true),
+            "DRIFT_180_RIGHT",
+            kDefaultDrift180Ms);
         RegisterTimedMotionTool("self.car.test_left_wheel_forward",
             BuildWheelDiagnosticToolDescription("Spin only the left wheel forward for a bounded duration."),
             "LEFT_WHEEL_FORWARD",
