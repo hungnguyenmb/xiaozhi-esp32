@@ -4,6 +4,7 @@
 #include "oled_display.h"
 
 #include <string>
+#include <string_view>
 
 class OledFaceDisplay : public OledDisplay {
 public:
@@ -43,6 +44,7 @@ private:
     enum class ActivityMode {
         IDLE,
         LISTENING,
+        THINKING,
         SPEAKING,
     };
 
@@ -54,20 +56,35 @@ private:
         uint16_t blink_period_ticks;
     };
 
+    struct EmotionStep {
+        EyeStyle left_eye;
+        EyeStyle right_eye;
+        MouthStyle mouth;
+        uint16_t duration_ticks;
+        bool auto_blink;
+        uint16_t blink_period_ticks;
+    };
+
     lv_obj_t* root_ = nullptr;
     lv_obj_t* face_layer_ = nullptr;
     lv_timer_t* anim_timer_ = nullptr;
 
     std::string current_emotion_ = "neutral";
+    std::string pending_emotion_;
     ActivityMode activity_mode_ = ActivityMode::IDLE;
     bool power_save_mode_ = false;
+    bool defer_emotion_until_speaking_ = false;
     uint32_t animation_tick_ = 0;
 
     static void AnimationTimerCb(lv_timer_t* timer);
     void OnAnimationTick();
     void ResetAnimation();
+    void ApplyEmotionNow(std::string emotion);
     FacePreset GetBasePreset(const std::string& emotion) const;
+    FacePreset ResolveSequence(const EmotionStep* steps, size_t count) const;
+    FacePreset ResolveHappyPreset() const;
     FacePreset ResolveAnimatedPreset() const;
+    bool ShouldUseFullEmotionWhileSpeaking(std::string_view emotion) const;
     bool IsBlinkFrame(const FacePreset& preset) const;
     void RenderFace();
     void DrawEye(int center_x, int center_y, EyeStyle style);

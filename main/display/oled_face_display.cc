@@ -18,6 +18,10 @@ constexpr int kEyesCenterY = 24;
 constexpr int kMouthCenterX = 64;
 constexpr int kMouthCenterY = 47;
 
+bool IsDeferredEmotion(std::string_view emotion) {
+    return !emotion.empty() && emotion != "neutral" && emotion != "thinking";
+}
+
 }  // namespace
 
 OledFaceDisplay::OledFaceDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -76,12 +80,28 @@ void OledFaceDisplay::SetupUI() {
 
 void OledFaceDisplay::SetStatus(const char* status) {
     DisplayLockGuard lock(this);
+    auto previous_mode = activity_mode_;
     if (status != nullptr && strcmp(status, Lang::Strings::LISTENING) == 0) {
         activity_mode_ = ActivityMode::LISTENING;
+        defer_emotion_until_speaking_ = false;
+        pending_emotion_.clear();
     } else if (status != nullptr && strcmp(status, Lang::Strings::SPEAKING) == 0) {
         activity_mode_ = ActivityMode::SPEAKING;
+        if (defer_emotion_until_speaking_) {
+            defer_emotion_until_speaking_ = false;
+            ApplyEmotionNow(pending_emotion_.empty() ? "neutral" : pending_emotion_);
+            pending_emotion_.clear();
+        }
     } else {
-        activity_mode_ = ActivityMode::IDLE;
+        if (previous_mode == ActivityMode::LISTENING) {
+            activity_mode_ = ActivityMode::THINKING;
+            defer_emotion_until_speaking_ = true;
+            pending_emotion_.clear();
+        } else {
+            activity_mode_ = ActivityMode::IDLE;
+            defer_emotion_until_speaking_ = false;
+            pending_emotion_.clear();
+        }
     }
     ResetAnimation();
     RenderFace();
@@ -99,8 +119,16 @@ void OledFaceDisplay::SetChatMessage(const char* role, const char* content) {
 
 void OledFaceDisplay::SetEmotion(const char* emotion) {
     DisplayLockGuard lock(this);
-    current_emotion_ = (emotion != nullptr && emotion[0] != '\0') ? emotion : "neutral";
-    ResetAnimation();
+    std::string next_emotion = (emotion != nullptr && emotion[0] != '\0') ? emotion : "neutral";
+
+    if (defer_emotion_until_speaking_) {
+        if (IsDeferredEmotion(next_emotion)) {
+            pending_emotion_ = std::move(next_emotion);
+        }
+        return;
+    }
+
+    ApplyEmotionNow(std::move(next_emotion));
     RenderFace();
 }
 
@@ -132,6 +160,11 @@ void OledFaceDisplay::OnAnimationTick() {
 
 void OledFaceDisplay::ResetAnimation() {
     animation_tick_ = 0;
+}
+
+void OledFaceDisplay::ApplyEmotionNow(std::string emotion) {
+    current_emotion_ = emotion.empty() ? "neutral" : std::move(emotion);
+    ResetAnimation();
 }
 
 OledFaceDisplay::FacePreset OledFaceDisplay::GetBasePreset(const std::string& emotion) const {
@@ -198,6 +231,53 @@ OledFaceDisplay::FacePreset OledFaceDisplay::GetBasePreset(const std::string& em
     return {EyeStyle::OPEN, EyeStyle::OPEN, MouthStyle::SMALL, true, 24};
 }
 
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveSequence(const EmotionStep* steps, size_t count) const {
+    if (steps == nullptr || count == 0) {
+        return GetBasePreset("neutral");
+    }
+
+    uint32_t total_ticks = 0;
+    for (size_t i = 0; i < count; ++i) {
+        total_ticks += std::max<uint16_t>(1, steps[i].duration_ticks);
+    }
+
+    if (total_ticks == 0) {
+        return GetBasePreset("neutral");
+    }
+
+    uint32_t phase_tick = animation_tick_ % total_ticks;
+    for (size_t i = 0; i < count; ++i) {
+        uint32_t duration = std::max<uint16_t>(1, steps[i].duration_ticks);
+        if (phase_tick < duration) {
+            return {
+                steps[i].left_eye,
+                steps[i].right_eye,
+                steps[i].mouth,
+                steps[i].auto_blink,
+                steps[i].blink_period_ticks,
+            };
+        }
+        phase_tick -= duration;
+    }
+
+    const auto& last = steps[count - 1];
+    return {last.left_eye, last.right_eye, last.mouth, last.auto_blink, last.blink_period_ticks};
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveHappyPreset() const {
+    // "Duoc khen" nen vui theo nhip: mo ra -> no dan -> giu -> chop nhe -> quay ve cuoi am.
+    static const EmotionStep kHappySteps[] = {
+        {EyeStyle::WIDE,   EyeStyle::WIDE,   MouthStyle::SMALL, 1, false, 0},
+        {EyeStyle::OPEN,   EyeStyle::OPEN,   MouthStyle::SMALL, 1, false, 0},
+        {EyeStyle::OPEN,   EyeStyle::OPEN,   MouthStyle::SMILE, 3, false, 0},
+        {EyeStyle::HAPPY,  EyeStyle::HAPPY,  MouthStyle::SMILE, 1, false, 0},
+        {EyeStyle::CLOSED, EyeStyle::CLOSED, MouthStyle::SMILE, 1, false, 0},
+        {EyeStyle::OPEN,   EyeStyle::OPEN,   MouthStyle::SMILE, 2, false, 0},
+    };
+
+    return ResolveSequence(kHappySteps, sizeof(kHappySteps) / sizeof(kHappySteps[0]));
+}
+
 bool OledFaceDisplay::IsBlinkFrame(const FacePreset& preset) const {
     if (!preset.auto_blink || preset.blink_period_ticks == 0) {
         return false;
@@ -207,8 +287,10 @@ bool OledFaceDisplay::IsBlinkFrame(const FacePreset& preset) const {
 }
 
 OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
-    std::string emotion = power_save_mode_ ? "sleepy" : current_emotion_;
-    auto preset = GetBasePreset(emotion);
+    std::string emotion = power_save_mode_
+        ? "sleepy"
+        : (activity_mode_ == ActivityMode::THINKING ? "thinking" : current_emotion_);
+    auto preset = emotion == "happy" ? ResolveHappyPreset() : GetBasePreset(emotion);
 
     if (emotion == "winking") {
         preset.left_eye = (animation_tick_ / 6) % 2 == 0 ? EyeStyle::CLOSED : EyeStyle::OPEN;
@@ -230,12 +312,17 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
         if (preset.mouth == MouthStyle::OPEN_LARGE) {
             preset.mouth = MouthStyle::OPEN_SMALL;
         }
+    } else if (activity_mode_ == ActivityMode::THINKING) {
+        preset = GetBasePreset("thinking");
+        preset.mouth = (animation_tick_ / 4) % 2 == 0 ? MouthStyle::SMIRK_RIGHT : MouthStyle::FLAT;
     } else if (activity_mode_ == ActivityMode::SPEAKING) {
-        uint32_t phase = animation_tick_ % 4;
-        if (phase == 0 || phase == 2) {
-            preset.mouth = MouthStyle::OPEN_SMALL;
-        } else {
-            preset.mouth = MouthStyle::OPEN_LARGE;
+        if (!ShouldUseFullEmotionWhileSpeaking(emotion)) {
+            uint32_t phase = animation_tick_ % 4;
+            if (phase == 0 || phase == 2) {
+                preset.mouth = MouthStyle::OPEN_SMALL;
+            } else {
+                preset.mouth = MouthStyle::OPEN_LARGE;
+            }
         }
     } else if (IsBlinkFrame(preset)) {
         preset.left_eye = EyeStyle::CLOSED;
@@ -243,6 +330,10 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
     }
 
     return preset;
+}
+
+bool OledFaceDisplay::ShouldUseFullEmotionWhileSpeaking(std::string_view emotion) const {
+    return emotion == "laughing" || emotion == "happy" || emotion == "sad" || emotion == "crying";
 }
 
 lv_obj_t* OledFaceDisplay::CreateFilledEllipse(int x, int y, int width, int height) {
