@@ -1117,6 +1117,17 @@ void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
 }
 
+void Application::PlayPrioritySound(const std::string_view& sound) {
+    std::string sound_copy(sound.data(), sound.size());
+    Schedule([this, sound_copy = std::move(sound_copy)]() {
+        if (GetDeviceState() == kDeviceStateSpeaking) {
+            AbortSpeaking(kAbortReasonNone);
+        }
+        audio_service_.ResetDecoder();
+        audio_service_.PlaySound(std::string_view(sound_copy.data(), sound_copy.size()));
+    });
+}
+
 void Application::ResetProtocol() {
     Schedule([this]() {
         // Close audio channel if opened

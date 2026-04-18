@@ -178,7 +178,7 @@ OledFaceDisplay::FacePreset OledFaceDisplay::GetBasePreset(const std::string& em
         return {EyeStyle::OPEN, EyeStyle::SMALL, MouthStyle::SMILE, true, 18};
     }
     if (emotion == "sad") {
-        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::FLAT, true, 28};
+        return {EyeStyle::HALF, EyeStyle::HALF, MouthStyle::FROWN, true, 28};
     }
     if (emotion == "angry") {
         return {EyeStyle::SQUINT, EyeStyle::SQUINT, MouthStyle::FLAT, false, 0};
@@ -278,6 +278,64 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveHappyPreset() const {
     return ResolveSequence(kHappySteps, sizeof(kHappySteps) / sizeof(kHappySteps[0]));
 }
 
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveLaughingPreset() const {
+    // "Cuoi to" phai co nhip bat 3 lan: lay da -> bung cuoi -> ha xuong nhe -> cuoi tiep -> hoi phuc.
+    static const EmotionStep kLaughingSteps[] = {
+        {EyeStyle::WIDE,  EyeStyle::WIDE,  MouthStyle::SMALL,      1, false, 0},
+        {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_SMALL, 1, false, 0},
+        {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_LARGE, 1, false, 0},
+        {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_SMALL, 1, false, 0},
+        {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_LARGE, 1, false, 0},
+        {EyeStyle::HAPPY, EyeStyle::HAPPY, MouthStyle::OPEN_SMALL, 1, false, 0},
+        {EyeStyle::OPEN,  EyeStyle::OPEN,  MouthStyle::SMILE,      1, false, 0},
+        {EyeStyle::OPEN,  EyeStyle::OPEN,  MouthStyle::SMILE,      1, false, 0},
+    };
+
+    return ResolveSequence(kLaughingSteps, sizeof(kLaughingSteps) / sizeof(kLaughingSteps[0]));
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveThinkingPreset() const {
+    // "Dang suy nghi" can khac neutral ro rang: lech mat, mieng lech, co nhip dao y rat nhe.
+    static const EmotionStep kThinkingSteps[] = {
+        {EyeStyle::SMALL, EyeStyle::OPEN, MouthStyle::FLAT,        1, false, 0},
+        {EyeStyle::HALF,  EyeStyle::OPEN, MouthStyle::SMIRK_RIGHT, 2, false, 0},
+        {EyeStyle::OPEN,  EyeStyle::SMALL, MouthStyle::SMALL,      1, false, 0},
+        {EyeStyle::OPEN,  EyeStyle::HALF, MouthStyle::SMIRK_LEFT,  2, false, 0},
+        {EyeStyle::HALF,  EyeStyle::HALF, MouthStyle::SMALL,       1, false, 0},
+        {EyeStyle::SMALL, EyeStyle::OPEN, MouthStyle::SMIRK_RIGHT, 2, false, 0},
+    };
+
+    return ResolveSequence(kThinkingSteps, sizeof(kThinkingSteps) / sizeof(kThinkingSteps[0]));
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveSadPreset() const {
+    // "Buon" can co khoang dung, rut xuong, giu lai va chop mat cham o cuoi.
+    static const EmotionStep kSadSteps[] = {
+        {EyeStyle::OPEN,   EyeStyle::OPEN,  MouthStyle::SMALL, 1, false, 0},
+        {EyeStyle::OPEN,   EyeStyle::HALF,  MouthStyle::SMALL, 1, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::FLAT,  1, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::FROWN, 3, false, 0},
+        {EyeStyle::CLOSED, EyeStyle::CLOSED, MouthStyle::FROWN, 1, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::FROWN, 2, false, 0},
+    };
+
+    return ResolveSequence(kSadSteps, sizeof(kSadSteps) / sizeof(kSadSteps[0]));
+}
+
+OledFaceDisplay::FacePreset OledFaceDisplay::ResolveCryingPreset() const {
+    // "Khoc" phai di qua buon roi moi roi le, tranh hien nuoc mat qua som.
+    static const EmotionStep kCryingSteps[] = {
+        {EyeStyle::OPEN,   EyeStyle::OPEN,  MouthStyle::SMALL,      1, false, 0},
+        {EyeStyle::OPEN,   EyeStyle::HALF,  MouthStyle::FLAT,       1, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::FROWN,      2, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::FROWN,      1, false, 0},
+        {EyeStyle::CLOSED, EyeStyle::HALF,  MouthStyle::FROWN,      1, false, 0},
+        {EyeStyle::HALF,   EyeStyle::HALF,  MouthStyle::OPEN_SMALL, 2, false, 0},
+    };
+
+    return ResolveSequence(kCryingSteps, sizeof(kCryingSteps) / sizeof(kCryingSteps[0]));
+}
+
 bool OledFaceDisplay::IsBlinkFrame(const FacePreset& preset) const {
     if (!preset.auto_blink || preset.blink_period_ticks == 0) {
         return false;
@@ -290,7 +348,20 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
     std::string emotion = power_save_mode_
         ? "sleepy"
         : (activity_mode_ == ActivityMode::THINKING ? "thinking" : current_emotion_);
-    auto preset = emotion == "happy" ? ResolveHappyPreset() : GetBasePreset(emotion);
+    FacePreset preset;
+    if (emotion == "happy") {
+        preset = ResolveHappyPreset();
+    } else if (emotion == "laughing") {
+        preset = ResolveLaughingPreset();
+    } else if (emotion == "thinking") {
+        preset = ResolveThinkingPreset();
+    } else if (emotion == "sad") {
+        preset = ResolveSadPreset();
+    } else if (emotion == "crying") {
+        preset = ResolveCryingPreset();
+    } else {
+        preset = GetBasePreset(emotion);
+    }
 
     if (emotion == "winking") {
         preset.left_eye = (animation_tick_ / 6) % 2 == 0 ? EyeStyle::CLOSED : EyeStyle::OPEN;
@@ -298,8 +369,6 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
         preset.right_eye = (animation_tick_ / 6) % 2 == 0 ? EyeStyle::CLOSED : EyeStyle::OPEN;
     } else if (emotion == "shocked" || emotion == "surprised") {
         preset.mouth = (animation_tick_ / 2) % 2 == 0 ? MouthStyle::OPEN_SMALL : MouthStyle::OPEN_LARGE;
-    } else if (emotion == "thinking") {
-        preset.mouth = (animation_tick_ / 4) % 2 == 0 ? MouthStyle::SMIRK_RIGHT : MouthStyle::FLAT;
     }
 
     if (activity_mode_ == ActivityMode::LISTENING) {
@@ -313,8 +382,7 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
             preset.mouth = MouthStyle::OPEN_SMALL;
         }
     } else if (activity_mode_ == ActivityMode::THINKING) {
-        preset = GetBasePreset("thinking");
-        preset.mouth = (animation_tick_ / 4) % 2 == 0 ? MouthStyle::SMIRK_RIGHT : MouthStyle::FLAT;
+        preset = ResolveThinkingPreset();
     } else if (activity_mode_ == ActivityMode::SPEAKING) {
         if (!ShouldUseFullEmotionWhileSpeaking(emotion)) {
             uint32_t phase = animation_tick_ % 4;
@@ -334,6 +402,24 @@ OledFaceDisplay::FacePreset OledFaceDisplay::ResolveAnimatedPreset() const {
 
 bool OledFaceDisplay::ShouldUseFullEmotionWhileSpeaking(std::string_view emotion) const {
     return emotion == "laughing" || emotion == "happy" || emotion == "sad" || emotion == "crying";
+}
+
+bool OledFaceDisplay::ShouldDrawLeftTear() const {
+    if (power_save_mode_ || current_emotion_ != "crying") {
+        return false;
+    }
+
+    uint32_t phase = animation_tick_ % 8;
+    return phase >= 4;
+}
+
+bool OledFaceDisplay::ShouldDrawRightTear() const {
+    if (power_save_mode_ || current_emotion_ != "crying") {
+        return false;
+    }
+
+    uint32_t phase = animation_tick_ % 8;
+    return phase >= 5;
 }
 
 lv_obj_t* OledFaceDisplay::CreateFilledEllipse(int x, int y, int width, int height) {
@@ -425,6 +511,10 @@ void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
         width = 22;
         height = 5;
         break;
+    case MouthStyle::FROWN:
+        width = 20;
+        height = 6;
+        break;
     case MouthStyle::OPEN_SMALL:
         width = 10;
         height = 8;
@@ -455,10 +545,22 @@ void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
 
     int x = center_x - (width / 2) + x_offset;
     int y = center_y - (height / 2);
-    if (outline) {
+    if (style == MouthStyle::FROWN) {
+        CreateFilledEllipse(x, y + 2, 6, 3);
+        CreateFilledEllipse(center_x - 3, y + 4, 6, 3);
+        CreateFilledEllipse(x + 14, y + 2, 6, 3);
+    } else if (outline) {
         CreateOutlineEllipse(x, y, width, height, border_width);
     } else {
         CreateFilledEllipse(x, y, width, height);
+    }
+}
+
+void OledFaceDisplay::DrawTear(int center_x, int top_y, bool long_drop) {
+    CreateFilledEllipse(center_x - 2, top_y, 4, 5);
+    CreateFilledEllipse(center_x - 1, top_y + 4, 2, 4);
+    if (long_drop) {
+        CreateFilledEllipse(center_x - 1, top_y + 8, 2, 5);
     }
 }
 
@@ -473,4 +575,10 @@ void OledFaceDisplay::RenderFace() {
     DrawEye(kLeftEyeCenterX, kEyesCenterY, preset.left_eye);
     DrawEye(kRightEyeCenterX, kEyesCenterY, preset.right_eye);
     DrawMouth(kMouthCenterX, kMouthCenterY, preset.mouth);
+    if (ShouldDrawLeftTear()) {
+        DrawTear(kLeftEyeCenterX - 6, kEyesCenterY + 10, animation_tick_ % 2 == 0);
+    }
+    if (ShouldDrawRightTear()) {
+        DrawTear(kRightEyeCenterX + 6, kEyesCenterY + 10, animation_tick_ % 2 == 1);
+    }
 }

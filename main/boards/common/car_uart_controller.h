@@ -1,6 +1,8 @@
 #ifndef __CAR_UART_CONTROLLER_H__
 #define __CAR_UART_CONTROLLER_H__
 
+#include "application.h"
+#include "assets/car_sound_config.h"
 #include "mcp_server.h"
 
 #include <freertos/FreeRTOS.h>
@@ -10,6 +12,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 
+#include <cstring>
 #include <mutex>
 #include <string>
 
@@ -26,10 +29,12 @@ private:
     static constexpr int kDefaultSadBackoffMs = 520;
     static constexpr int kDefaultDriftMs = 650;
     static constexpr int kDefaultDrift180Ms = 3000;
+    static constexpr int kMinDrift180Ms = 2800;
     static constexpr int kDefaultWheelTestMs = 450;
     static constexpr int kDefaultLineLedProbeMs = 900;
     static constexpr int kMinMotionMs = 80;
     static constexpr int kMaxMotionMs = 3500;
+    static constexpr int kMotionSfxCooldownMs = 180;
 
     uart_port_t uart_num_;
     gpio_num_t tx_pin_;
@@ -37,6 +42,8 @@ private:
     int baud_rate_;
     int rx_buffer_size_;
     std::mutex mutex_;
+    int64_t last_motion_sfx_us_ = 0;
+    std::string last_motion_sfx_key_;
 
     std::string BuildTaskMotionToolDescription(const std::string& summary, bool supports_duration) {
         std::string description =
@@ -51,6 +58,28 @@ private:
             description += "\nUse `duration_ms` when the user asks for a specific amount or a longer bounded motion.";
         }
         return description;
+    }
+
+    std::string BuildShortDriftToolDescription(const std::string& direction) {
+        return
+            "Short " + direction + " drift only.\n"
+            "Use this only for a normal short drift or powerslide.\n"
+            "Never use this if the user says 180, drift 180, drip 180, one-eighty, half-turn, u-turn, quay 180, nua vong, or mot tam muoi.\n"
+            "If the user mentions 180 in any form, use `self.car.drift_180_" + direction + "` instead.\n"
+            "Call the tool immediately.\n"
+            "Do not say anything before the tool call.\n"
+            "After success, stay silent.";
+    }
+
+    std::string BuildDrift180ToolDescription(const std::string& direction) {
+        return
+            direction + " drift 180 only.\n"
+            "This tool is for any request that mentions 180, drift 180, drip 180, one-eighty, half-turn, u-turn, quay 180, quay dau lai, nua vong, or mot tam muoi.\n"
+            "If the user says 180 in any form, prefer this tool over `self.car.drift_" + direction + "`.\n"
+            "This is an allowed bounded stunt for a small tabletop robot car.\n"
+            "Call the tool immediately.\n"
+            "Do not say anything before the tool call.\n"
+            "After success, stay silent.";
     }
 
     std::string BuildWheelDiagnosticToolDescription(const std::string& summary) {
@@ -83,6 +112,14 @@ private:
             "Silence before and after the tool is preferred and acceptable.\n"
             "If you speak, say at most one short emotional line before calling the tool, such as `" + example_line + "`.\n"
             "Do not narrate the motion, do not say it is finished, do not ask what to do next, and do not mention internal details.";
+    }
+
+    std::string BuildSoundOnlyToolDescription(const std::string& summary, const std::string& trigger_hint) {
+        return summary + " " + trigger_hint + "\n"
+            "This tool only plays a local sound effect on the ESP32 speaker and does not move the car.\n"
+            "Use it immediately when the user clearly asks to hear the sound.\n"
+            "If you speak, keep it to one short line before the tool call.\n"
+            "After success, stay silent and do not narrate internal audio details.";
     }
 
     bool IsReflexMotionCommand(const std::string& command) {
@@ -165,6 +202,14 @@ private:
                 std::lock_guard<std::mutex> lock(mutex_);
                 return ExecuteTimedCommandLocked(command, properties["duration_ms"].value<int>());
             });
+    }
+
+    void RegisterLocalSoundTool(const std::string& name, const std::string& description, const std::string_view& sound) {
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool(name, description, PropertyList(), [sound](const PropertyList&) -> ReturnValue {
+            Application::GetInstance().PlayPrioritySound(sound);
+            return "ok";
+        });
     }
 
     void StartBootSmokeTestTask() {
@@ -265,18 +310,90 @@ private:
         return command + " " + std::to_string(duration_ms);
     }
 
+    int NormalizeTimedMotionDuration(const std::string& command, int duration_ms) {
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && duration_ms < kMinDrift180Ms) {
+            return kMinDrift180Ms;
+        }
+        return duration_ms;
+    }
+
     std::string BuildDoneReply(const std::string& command) {
         return "DONE " + command;
     }
 
+    bool TryParseMotionEvent(const std::string& reply, std::string& event_command, std::string& event_phase) {
+        static constexpr const char* kEventPrefix = "EVENT ";
+        if (reply.rfind(kEventPrefix, 0) != 0) {
+            return false;
+        }
+        size_t command_start = strlen(kEventPrefix);
+        size_t separator = reply.find(' ', command_start);
+        if (separator == std::string::npos || separator <= command_start || separator + 1 >= reply.size()) {
+            return false;
+        }
+        event_command = reply.substr(command_start, separator - command_start);
+        event_phase = reply.substr(separator + 1);
+        return !event_command.empty() && !event_phase.empty();
+    }
+
+    const std::string_view* MotionSoundForEvent(const std::string& command, const std::string& phase) {
+        if ((command == "DRIFT_LEFT" || command == "DRIFT_RIGHT") && phase == "KICK") {
+            return &CarSounds::OGG_SKID;
+        }
+        if ((command == "DRIFT_LEFT" || command == "DRIFT_RIGHT") && phase == "CATCH") {
+            return &CarSounds::OGG_BRAKE_SCRUB;
+        }
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "CHARGE") {
+            return &CarSounds::OGG_ENGINE_REV;
+        }
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "SPIN") {
+            return &CarSounds::OGG_SKID;
+        }
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "END") {
+            return &CarSounds::OGG_BRAKE_SCRUB;
+        }
+        return nullptr;
+    }
+
+    void PlayMotionSfxIfNeeded(const std::string& sound_key, const std::string_view& sound) {
+        int64_t now_us = esp_timer_get_time();
+        if (!last_motion_sfx_key_.empty() &&
+            last_motion_sfx_key_ == sound_key &&
+            (now_us - last_motion_sfx_us_) < static_cast<int64_t>(kMotionSfxCooldownMs) * 1000) {
+            return;
+        }
+        last_motion_sfx_key_ = sound_key;
+        last_motion_sfx_us_ = now_us;
+        Application::GetInstance().PlayPrioritySound(sound);
+    }
+
+    bool HandleMotionEventReplyLocked(const std::string& active_command, const std::string& reply) {
+        std::string event_command;
+        std::string event_phase;
+        if (!TryParseMotionEvent(reply, event_command, event_phase)) {
+            return false;
+        }
+        if (event_command != active_command) {
+            ESP_LOGW(TAG, "Ignoring motion event for other command: active=%s event=%s phase=%s",
+                active_command.c_str(), event_command.c_str(), event_phase.c_str());
+            return true;
+        }
+        const std::string_view* sound = MotionSoundForEvent(event_command, event_phase);
+        if (sound != nullptr) {
+            PlayMotionSfxIfNeeded(event_command + ":" + event_phase, *sound);
+        }
+        return true;
+    }
+
     std::string ExecuteTimedCommandLocked(const std::string& command, int duration_ms) {
         std::string mode_reply = EnsureRemoteModeLocked();
-        std::string request = BuildTimedCommand(command, duration_ms);
+        int effective_duration_ms = NormalizeTimedMotionDuration(command, duration_ms);
+        std::string request = BuildTimedCommand(command, effective_duration_ms);
         std::string expected_done = BuildDoneReply(command);
         std::string expected_ack = "OK " + command;
         SendLineLocked(request, false);
 
-        const int timeout_ms = duration_ms + 900;
+        const int timeout_ms = effective_duration_ms + 900;
         const int64_t deadline_us = esp_timer_get_time() + static_cast<int64_t>(timeout_ms) * 1000;
         std::string done_reply;
         while (esp_timer_get_time() < deadline_us) {
@@ -291,6 +408,9 @@ private:
             if (reply == expected_ack) {
                 continue;
             }
+            if (HandleMotionEventReplyLocked(command, reply)) {
+                continue;
+            }
             done_reply = reply;
             break;
         }
@@ -302,7 +422,8 @@ private:
                 " MODE=" + mode_reply +
                 " STOP=" + stop_reply +
                 " STATUS=" + status_reply +
-                " DURATION_MS=" + std::to_string(duration_ms);
+                " DURATION_MS=" + std::to_string(duration_ms) +
+                " EFFECTIVE_DURATION_MS=" + std::to_string(effective_duration_ms);
             ESP_LOGW(TAG, "%s", log_result.c_str());
             throw std::runtime_error(BuildPublicMotionFailure(command, "timeout"));
         }
@@ -315,7 +436,8 @@ private:
                 " DONE=" + done_reply +
                 " STOP=" + stop_reply +
                 " STATUS=" + status_reply +
-                " DURATION_MS=" + std::to_string(duration_ms);
+                " DURATION_MS=" + std::to_string(duration_ms) +
+                " EFFECTIVE_DURATION_MS=" + std::to_string(effective_duration_ms);
             ESP_LOGW(TAG, "%s", log_result.c_str());
             throw std::runtime_error(BuildPublicMotionFailure(command, "failed"));
         }
@@ -325,7 +447,8 @@ private:
             " MODE=" + mode_reply +
             " DONE=" + done_reply +
             " STATUS=" + status_reply +
-            " DURATION_MS=" + std::to_string(duration_ms);
+            " DURATION_MS=" + std::to_string(duration_ms) +
+            " EFFECTIVE_DURATION_MS=" + std::to_string(effective_duration_ms);
         ESP_LOGI(TAG, "%s", log_result.c_str());
         return BuildPublicMotionSuccess(command);
     }
@@ -361,6 +484,11 @@ public:
         RegisterTool("self.car.enter_remote_mode",
             "Prepare the car controller for movement. This is an internal setup step. If you mention it to the user, keep it brief and do not describe controller modes.",
             "MODE REMOTE");
+        RegisterLocalSoundTool("self.car.engine_start",
+            BuildSoundOnlyToolDescription(
+                "Play the local engine-start sound without moving the car.",
+                "Use this when the user says things like `no may`, `de may`, `mo may`, or wants to hear the engine start."),
+            CarSounds::OGG_TIENG_NO_MAY);
         auto& mcp_server = McpServer::GetInstance();
         mcp_server.AddTool("self.car.run_smoke_test",
             "Run a safe UART smoke test against the Arduino Nano car controller. This test only sends PING, STATUS, MODE REMOTE and STOP.",
@@ -441,19 +569,23 @@ public:
             "SAD_BACKOFF",
             kDefaultSadBackoffMs);
         RegisterTimedMotionTool("self.car.drift_left",
-            BuildTaskMotionToolDescription("Perform a short left drift-like skid turn with a built-in multi-phase motion profile on the Arduino Nano. Use this only when the user explicitly asks to drift, powerslide, or do a flashy skid turn.", true),
+            BuildShortDriftToolDescription("left") +
+                "\nSilence is preferred so the local skid sound can be heard clearly.",
             "DRIFT_LEFT",
             kDefaultDriftMs);
         RegisterTimedMotionTool("self.car.drift_right",
-            BuildTaskMotionToolDescription("Perform a short right drift-like skid turn with a built-in multi-phase motion profile on the Arduino Nano. Use this only when the user explicitly asks to drift, powerslide, or do a flashy skid turn.", true),
+            BuildShortDriftToolDescription("right") +
+                "\nSilence is preferred so the local skid sound can be heard clearly.",
             "DRIFT_RIGHT",
             kDefaultDriftMs);
         RegisterTimedMotionTool("self.car.drift_180_left",
-            BuildTaskMotionToolDescription("Perform a left one-eighty drift maneuver with a fast ramp-up, short charge, quick flick, then the existing built-in drift profile, stopping with encoder cutoff near one hundred eighty degrees. Use this only when the user clearly asks for a one-eighty spin or half-turn drift.", true),
+            BuildDrift180ToolDescription("left") +
+                "\nSilence is preferred so the local engine and skid sound cues can be heard clearly.",
             "DRIFT_180_LEFT",
             kDefaultDrift180Ms);
         RegisterTimedMotionTool("self.car.drift_180_right",
-            BuildTaskMotionToolDescription("Perform a right one-eighty drift maneuver with a fast ramp-up, short charge, quick flick, then the existing built-in drift profile, stopping with encoder cutoff near one hundred eighty degrees. Use this only when the user clearly asks for a one-eighty spin or half-turn drift.", true),
+            BuildDrift180ToolDescription("right") +
+                "\nSilence is preferred so the local engine and skid sound cues can be heard clearly.",
             "DRIFT_180_RIGHT",
             kDefaultDrift180Ms);
         RegisterTimedMotionTool("self.car.test_left_wheel_forward",

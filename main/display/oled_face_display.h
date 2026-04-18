@@ -34,6 +34,7 @@ private:
         FLAT,
         SMALL,
         SMILE,
+        FROWN,
         OPEN_SMALL,
         OPEN_LARGE,
         KISS,
@@ -83,12 +84,19 @@ private:
     FacePreset GetBasePreset(const std::string& emotion) const;
     FacePreset ResolveSequence(const EmotionStep* steps, size_t count) const;
     FacePreset ResolveHappyPreset() const;
+    FacePreset ResolveLaughingPreset() const;
+    FacePreset ResolveThinkingPreset() const;
+    FacePreset ResolveSadPreset() const;
+    FacePreset ResolveCryingPreset() const;
     FacePreset ResolveAnimatedPreset() const;
     bool ShouldUseFullEmotionWhileSpeaking(std::string_view emotion) const;
     bool IsBlinkFrame(const FacePreset& preset) const;
+    bool ShouldDrawLeftTear() const;
+    bool ShouldDrawRightTear() const;
     void RenderFace();
     void DrawEye(int center_x, int center_y, EyeStyle style);
     void DrawMouth(int center_x, int center_y, MouthStyle style);
+    void DrawTear(int center_x, int top_y, bool long_drop);
     lv_obj_t* CreateFilledEllipse(int x, int y, int width, int height);
     lv_obj_t* CreateOutlineEllipse(int x, int y, int width, int height, int border_width);
 };
