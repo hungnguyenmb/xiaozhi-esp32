@@ -14,9 +14,9 @@ namespace {
 constexpr int kAnimPeriodMs = 120;
 constexpr int kLeftEyeCenterX = 38;
 constexpr int kRightEyeCenterX = 90;
-constexpr int kEyesCenterY = 24;
+constexpr int kEyesCenterY = 18;
 constexpr int kMouthCenterX = 64;
-constexpr int kMouthCenterY = 47;
+constexpr int kMouthCenterY = 36;
 
 bool IsDeferredEmotion(std::string_view emotion) {
     return !emotion.empty() && emotion != "neutral" && emotion != "thinking";
@@ -449,42 +449,42 @@ lv_obj_t* OledFaceDisplay::CreateOutlineEllipse(int x, int y, int width, int hei
 }
 
 void OledFaceDisplay::DrawEye(int center_x, int center_y, EyeStyle style) {
-    int width = 24;
-    int height = 18;
+    int width = 20;
+    int height = 15;
     int y_offset = 0;
 
     switch (style) {
     case EyeStyle::OPEN:
+        width = 20;
+        height = 15;
+        break;
+    case EyeStyle::WIDE:
         width = 24;
         height = 18;
         break;
-    case EyeStyle::WIDE:
-        width = 28;
-        height = 21;
-        break;
     case EyeStyle::SMALL:
-        width = 18;
-        height = 12;
+        width = 15;
+        height = 10;
         break;
     case EyeStyle::HALF:
-        width = 24;
-        height = 10;
-        y_offset = 3;
+        width = 20;
+        height = 8;
+        y_offset = 2;
         break;
     case EyeStyle::SQUINT:
-        width = 24;
-        height = 6;
-        y_offset = 5;
-        break;
-    case EyeStyle::HAPPY:
-        width = 24;
-        height = 8;
+        width = 20;
+        height = 5;
         y_offset = 4;
         break;
+    case EyeStyle::HAPPY:
+        width = 20;
+        height = 7;
+        y_offset = 3;
+        break;
     case EyeStyle::CLOSED:
-        width = 24;
-        height = 4;
-        y_offset = 6;
+        width = 20;
+        height = 3;
+        y_offset = 5;
         break;
     }
 
@@ -492,7 +492,7 @@ void OledFaceDisplay::DrawEye(int center_x, int center_y, EyeStyle style) {
 }
 
 void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
-    int width = 16;
+    int width = 14;
     int height = 4;
     int x_offset = 0;
     bool outline = false;
@@ -500,55 +500,55 @@ void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
 
     switch (style) {
     case MouthStyle::FLAT:
-        width = 16;
+        width = 14;
         height = 3;
         break;
     case MouthStyle::SMALL:
-        width = 10;
-        height = 4;
+        width = 9;
+        height = 3;
         break;
     case MouthStyle::SMILE:
-        width = 22;
-        height = 5;
+        width = 18;
+        height = 4;
         break;
     case MouthStyle::FROWN:
-        width = 20;
-        height = 6;
+        width = 16;
+        height = 5;
         break;
     case MouthStyle::OPEN_SMALL:
-        width = 10;
-        height = 8;
+        width = 9;
+        height = 7;
         outline = true;
         break;
     case MouthStyle::OPEN_LARGE:
-        width = 14;
-        height = 12;
+        width = 12;
+        height = 10;
         outline = true;
         break;
     case MouthStyle::KISS:
-        width = 8;
-        height = 8;
+        width = 7;
+        height = 7;
         outline = true;
         border_width = 2;
         break;
     case MouthStyle::SMIRK_LEFT:
-        width = 14;
+        width = 12;
         height = 4;
-        x_offset = -5;
+        x_offset = -4;
         break;
     case MouthStyle::SMIRK_RIGHT:
-        width = 14;
+        width = 12;
         height = 4;
-        x_offset = 5;
+        x_offset = 4;
         break;
     }
 
     int x = center_x - (width / 2) + x_offset;
     int y = center_y - (height / 2);
     if (style == MouthStyle::FROWN) {
-        CreateFilledEllipse(x, y + 2, 6, 3);
-        CreateFilledEllipse(center_x - 3, y + 4, 6, 3);
-        CreateFilledEllipse(x + 14, y + 2, 6, 3);
+        CreateFilledEllipse(x, y + 1, 5, 3);
+        CreateFilledEllipse(center_x - 2, y + 3, 5, 3);
+        CreateFilledEllipse(x + 11, y + 1, 5, 3);
     } else if (outline) {
         CreateOutlineEllipse(x, y, width, height, border_width);
     } else {

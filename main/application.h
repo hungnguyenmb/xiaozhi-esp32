@@ -172,6 +172,9 @@ private:
     
     // State change handler called by state machine
     void OnStateChanged(DeviceState old_state, DeviceState new_state);
+    void PlayPrioritySoundImmediate(const std::string_view& sound);
+
+    TaskHandle_t main_task_handle_ = nullptr;
 };
 
 

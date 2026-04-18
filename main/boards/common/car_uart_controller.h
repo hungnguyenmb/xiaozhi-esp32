@@ -35,6 +35,8 @@ private:
     static constexpr int kMinMotionMs = 80;
     static constexpr int kMaxMotionMs = 3500;
     static constexpr int kMotionSfxCooldownMs = 180;
+    static constexpr int kDefaultMotionTimeoutSlackMs = 900;
+    static constexpr int kDrift180TimeoutSlackMs = 2200;
 
     uart_port_t uart_num_;
     gpio_num_t tx_pin_;
@@ -317,6 +319,13 @@ private:
         return duration_ms;
     }
 
+    int MotionTimeoutSlackMs(const std::string& command) const {
+        if (command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") {
+            return kDrift180TimeoutSlackMs;
+        }
+        return kDefaultMotionTimeoutSlackMs;
+    }
+
     std::string BuildDoneReply(const std::string& command) {
         return "DONE " + command;
     }
@@ -343,14 +352,14 @@ private:
         if ((command == "DRIFT_LEFT" || command == "DRIFT_RIGHT") && phase == "CATCH") {
             return &CarSounds::OGG_BRAKE_SCRUB;
         }
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "START") {
+            return &CarSounds::OGG_ENGINE_START;
+        }
         if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "CHARGE") {
             return &CarSounds::OGG_ENGINE_REV;
         }
-        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "SPIN") {
+        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "FLICK") {
             return &CarSounds::OGG_SKID;
-        }
-        if ((command == "DRIFT_180_LEFT" || command == "DRIFT_180_RIGHT") && phase == "END") {
-            return &CarSounds::OGG_BRAKE_SCRUB;
         }
         return nullptr;
     }
@@ -393,7 +402,7 @@ private:
         std::string expected_ack = "OK " + command;
         SendLineLocked(request, false);
 
-        const int timeout_ms = effective_duration_ms + 900;
+        const int timeout_ms = effective_duration_ms + MotionTimeoutSlackMs(command);
         const int64_t deadline_us = esp_timer_get_time() + static_cast<int64_t>(timeout_ms) * 1000;
         std::string done_reply;
         while (esp_timer_get_time() < deadline_us) {
@@ -479,7 +488,13 @@ public:
         ESP_ERROR_CHECK(uart_set_pin(uart_num_, tx_pin_, rx_pin_, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
         uart_flush_input(uart_num_);
 
-        RegisterTool("self.car.ping", "Ping the Arduino Nano car controller and expect `PONG` back.", "PING");
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddUserOnlyTool("self.car.ping",
+            "Ping the Arduino Nano car controller and expect `PONG` back.",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                return ExecuteCommand("PING");
+            });
         RegisterTool("self.car.get_status", "Read the current remote status from the Arduino Nano car controller.", "STATUS");
         RegisterTool("self.car.enter_remote_mode",
             "Prepare the car controller for movement. This is an internal setup step. If you mention it to the user, keep it brief and do not describe controller modes.",
@@ -489,8 +504,7 @@ public:
                 "Play the local engine-start sound without moving the car.",
                 "Use this when the user says things like `no may`, `de may`, `mo may`, or wants to hear the engine start."),
             CarSounds::OGG_TIENG_NO_MAY);
-        auto& mcp_server = McpServer::GetInstance();
-        mcp_server.AddTool("self.car.run_smoke_test",
+        mcp_server.AddUserOnlyTool("self.car.run_smoke_test",
             "Run a safe UART smoke test against the Arduino Nano car controller. This test only sends PING, STATUS, MODE REMOTE and STOP.",
             PropertyList(),
             [this](const PropertyList&) -> ReturnValue {

@@ -165,6 +165,7 @@ void Application::Initialize() {
 void Application::Run() {
     // Set the priority of the main task to 10
     vTaskPrioritySet(nullptr, 10);
+    main_task_handle_ = xTaskGetCurrentTaskHandle();
 
     const EventBits_t ALL_EVENTS = 
         MAIN_EVENT_SCHEDULE |
@@ -1117,14 +1118,23 @@ void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
 }
 
+void Application::PlayPrioritySoundImmediate(const std::string_view& sound) {
+    if (GetDeviceState() == kDeviceStateSpeaking) {
+        AbortSpeaking(kAbortReasonNone);
+    }
+    audio_service_.ResetDecoder();
+    audio_service_.PlaySound(sound);
+}
+
 void Application::PlayPrioritySound(const std::string_view& sound) {
+    if (main_task_handle_ != nullptr && xTaskGetCurrentTaskHandle() == main_task_handle_) {
+        PlayPrioritySoundImmediate(sound);
+        return;
+    }
+
     std::string sound_copy(sound.data(), sound.size());
     Schedule([this, sound_copy = std::move(sound_copy)]() {
-        if (GetDeviceState() == kDeviceStateSpeaking) {
-            AbortSpeaking(kAbortReasonNone);
-        }
-        audio_service_.ResetDecoder();
-        audio_service_.PlaySound(std::string_view(sound_copy.data(), sound_copy.size()));
+        PlayPrioritySoundImmediate(std::string_view(sound_copy.data(), sound_copy.size()));
     });
 }
 

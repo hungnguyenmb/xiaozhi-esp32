@@ -7,6 +7,86 @@ sdkconfig_file="sdkconfig.bread_compact_wifi_128x64_vi"
 board_name="bread-compact-wifi-128x64"
 board_type="bread-compact-wifi"
 
+guard_board_sdkconfig() {
+    python3 - "$repo_root/$sdkconfig_file" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+replacements = {
+    'CONFIG_XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE=y': [
+        '# CONFIG_XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE is not set',
+    ],
+    'CONFIG_LANGUAGE_VI_VN=y': [
+        'CONFIG_LANGUAGE_ZH_CN=y',
+        '# CONFIG_LANGUAGE_VI_VN is not set',
+    ],
+    '# CONFIG_LANGUAGE_ZH_CN is not set': [
+        'CONFIG_LANGUAGE_ZH_CN=y',
+    ],
+    'CONFIG_OLED_SSD1306_128X64=y': [
+        'CONFIG_OLED_SSD1306_128X32=y',
+        '# CONFIG_OLED_SSD1306_128X64 is not set',
+    ],
+    '# CONFIG_OLED_SSD1306_128X32 is not set': [
+        'CONFIG_OLED_SSD1306_128X32=y',
+    ],
+    'CONFIG_WAKE_WORD_DETECTION_IN_LISTENING=y': [
+        '# CONFIG_WAKE_WORD_DETECTION_IN_LISTENING is not set',
+    ],
+    '# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set': [
+        'CONFIG_ESP_CONSOLE_UART_DEFAULT=y',
+    ],
+    'CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y': [
+        '# CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set',
+    ],
+    'CONFIG_ESP_CONSOLE_SECONDARY_NONE=y': [
+        '# CONFIG_ESP_CONSOLE_SECONDARY_NONE is not set',
+    ],
+    '# CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG is not set': [
+        'CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y',
+    ],
+    'CONFIG_ESP_CONSOLE_UART_NUM=-1': [
+        'CONFIG_ESP_CONSOLE_UART_NUM=0',
+    ],
+    'CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM=4': [
+        'CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM=0',
+    ],
+    '# CONFIG_CONSOLE_UART_DEFAULT is not set': [
+        'CONFIG_CONSOLE_UART_DEFAULT=y',
+    ],
+    'CONFIG_CONSOLE_UART_NUM=-1': [
+        'CONFIG_CONSOLE_UART_NUM=0',
+    ],
+}
+
+changed = False
+for desired, wrong_values in replacements.items():
+    if desired not in text:
+        for wrong in wrong_values:
+            if wrong in text:
+                text = text.replace(wrong, desired)
+                changed = True
+        if desired not in text:
+            text += ("\n" if not text.endswith("\n") else "") + desired + "\n"
+            changed = True
+
+for stale in [
+    'CONFIG_ESP_CONSOLE_UART=y',
+    'CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200',
+    'CONFIG_CONSOLE_UART=y',
+    'CONFIG_CONSOLE_UART_BAUDRATE=115200',
+]:
+    if stale in text:
+        text = text.replace(stale + '\n', '')
+        changed = True
+
+if changed:
+    path.write_text(text)
+PY
+}
+
 find_latest_file() {
     local base="$1"
     local pattern="$2"
@@ -105,6 +185,7 @@ for maybe_dir in "$cmake_dir" "$ninja_dir" "$xtensa_dir" "$gdb_dir" "$ulp_dir" "
 done
 
 cd "$repo_root"
+guard_board_sdkconfig
 
 idf_py=(
     "$idf_python_env/bin/python"
