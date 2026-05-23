@@ -68,4 +68,10 @@
 #define CAR_UART_BAUD_RATE (9600)
 #define CAR_UART_BUF_SIZE (256)
 
+// Local bridge running on the user's computer.
+// Update this if the computer's LAN IP changes.
+#define CHILD_ROBOT_ID "deskbot-c3-01"
+#define CHILD_ROBOT_BRIDGE_URL "http://192.168.1.151:8091"
+#define CHILD_ROBOT_BRIDGE_TIMEOUT_MS (7000)
+
 #endif // _BOARD_CONFIG_H_
