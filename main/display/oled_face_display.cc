@@ -14,9 +14,9 @@ namespace {
 constexpr int kAnimPeriodMs = 120;
 constexpr int kLeftEyeCenterX = 38;
 constexpr int kRightEyeCenterX = 90;
-constexpr int kEyesCenterY = 18;
+constexpr int kEyesCenterY = 19;
 constexpr int kMouthCenterX = 64;
-constexpr int kMouthCenterY = 36;
+constexpr int kMouthCenterY = 46;
 
 bool IsDeferredEmotion(std::string_view emotion) {
     return !emotion.empty() && emotion != "neutral" && emotion != "thinking";
@@ -69,6 +69,7 @@ void OledFaceDisplay::SetupUI() {
     lv_obj_set_style_border_width(face_layer_, 0, 0);
     lv_obj_set_style_pad_all(face_layer_, 0, 0);
     lv_obj_set_scrollbar_mode(face_layer_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_align(face_layer_, LV_ALIGN_TOP_MID, 0, 0);
 
     anim_timer_ = lv_timer_create(AnimationTimerCb, kAnimPeriodMs, this);
     if (anim_timer_ == nullptr) {
@@ -435,6 +436,19 @@ lv_obj_t* OledFaceDisplay::CreateFilledEllipse(int x, int y, int width, int heig
     return obj;
 }
 
+lv_obj_t* OledFaceDisplay::CreateRoundedRect(int x, int y, int width, int height, int radius, lv_color_t color) {
+    lv_obj_t* obj = lv_obj_create(face_layer_);
+    lv_obj_set_pos(obj, x, y);
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_style_radius(obj, radius, 0);
+    lv_obj_set_style_bg_color(obj, color, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    return obj;
+}
+
 lv_obj_t* OledFaceDisplay::CreateOutlineEllipse(int x, int y, int width, int height, int border_width) {
     lv_obj_t* obj = lv_obj_create(face_layer_);
     lv_obj_set_pos(obj, x, y);
@@ -449,111 +463,207 @@ lv_obj_t* OledFaceDisplay::CreateOutlineEllipse(int x, int y, int width, int hei
 }
 
 void OledFaceDisplay::DrawEye(int center_x, int center_y, EyeStyle style) {
-    int width = 20;
-    int height = 15;
+    int width = 24;
+    int height = 18;
+    int radius = 8;
     int y_offset = 0;
+    int top_mask_height = 0;
+    int bottom_mask_height = 0;
+    bool use_line = false;
 
     switch (style) {
     case EyeStyle::OPEN:
-        width = 20;
-        height = 15;
-        break;
-    case EyeStyle::WIDE:
         width = 24;
         height = 18;
+        radius = 8;
+        break;
+    case EyeStyle::WIDE:
+        width = 28;
+        height = 22;
+        radius = 9;
         break;
     case EyeStyle::SMALL:
-        width = 15;
-        height = 10;
+        width = 18;
+        height = 14;
+        radius = 7;
         break;
     case EyeStyle::HALF:
-        width = 20;
-        height = 8;
-        y_offset = 2;
+        width = 24;
+        height = 18;
+        radius = 8;
+        y_offset = 1;
+        top_mask_height = 8;
         break;
     case EyeStyle::SQUINT:
-        width = 20;
-        height = 5;
+        width = 24;
+        height = 10;
+        radius = 5;
         y_offset = 4;
+        top_mask_height = 3;
         break;
     case EyeStyle::HAPPY:
-        width = 20;
-        height = 7;
+        width = 26;
+        height = 14;
+        radius = 7;
         y_offset = 3;
+        top_mask_height = 7;
         break;
     case EyeStyle::CLOSED:
-        width = 20;
-        height = 3;
+        width = 26;
+        height = 4;
+        radius = 4;
         y_offset = 5;
+        use_line = true;
         break;
     }
 
-    CreateFilledEllipse(center_x - (width / 2), center_y - (height / 2) + y_offset, width, height);
+    int x = center_x - (width / 2);
+    int y = center_y - (height / 2) + y_offset;
+
+    if (use_line) {
+        CreateRoundedRect(x, y, width, height, radius, lv_color_black());
+        return;
+    }
+
+    CreateRoundedRect(x, y, width, height, radius, lv_color_black());
+
+    if (top_mask_height > 0) {
+        CreateRoundedRect(x - 1, y - 1, width + 2, top_mask_height, radius, lv_color_white());
+    }
+    if (bottom_mask_height > 0) {
+        CreateRoundedRect(x - 1, y + height - bottom_mask_height + 1, width + 2, bottom_mask_height, radius, lv_color_white());
+    }
 }
 
 void OledFaceDisplay::DrawMouth(int center_x, int center_y, MouthStyle style) {
-    int width = 14;
-    int height = 4;
+    int width = 22;
+    int height = 5;
     int x_offset = 0;
     bool outline = false;
     int border_width = 2;
 
     switch (style) {
     case MouthStyle::FLAT:
-        width = 14;
-        height = 3;
+        width = 24;
+        height = 4;
         break;
     case MouthStyle::SMALL:
-        width = 9;
-        height = 3;
-        break;
-    case MouthStyle::SMILE:
         width = 18;
         height = 4;
         break;
+    case MouthStyle::SMILE:
+        width = 30;
+        height = 8;
+        break;
     case MouthStyle::FROWN:
-        width = 16;
-        height = 5;
+        width = 28;
+        height = 8;
         break;
     case MouthStyle::OPEN_SMALL:
-        width = 9;
-        height = 7;
+        width = 22;
+        height = 12;
         outline = true;
         break;
     case MouthStyle::OPEN_LARGE:
-        width = 12;
-        height = 10;
+        width = 30;
+        height = 18;
         outline = true;
+        border_width = 3;
         break;
     case MouthStyle::KISS:
-        width = 7;
-        height = 7;
+        width = 12;
+        height = 12;
         outline = true;
         border_width = 2;
         break;
     case MouthStyle::SMIRK_LEFT:
-        width = 12;
+        width = 20;
         height = 4;
-        x_offset = -4;
+        x_offset = -6;
         break;
     case MouthStyle::SMIRK_RIGHT:
-        width = 12;
+        width = 20;
         height = 4;
-        x_offset = 4;
+        x_offset = 6;
         break;
     }
 
     int x = center_x - (width / 2) + x_offset;
     int y = center_y - (height / 2);
     if (style == MouthStyle::FROWN) {
-        CreateFilledEllipse(x, y + 1, 5, 3);
-        CreateFilledEllipse(center_x - 2, y + 3, 5, 3);
-        CreateFilledEllipse(x + 11, y + 1, 5, 3);
+        CreateFilledEllipse(x, y + 1, 9, 4);
+        CreateFilledEllipse(center_x - 4, y + 5, 10, 4);
+        CreateFilledEllipse(x + width - 9, y + 1, 9, 4);
+    } else if (style == MouthStyle::SMILE) {
+        CreateFilledEllipse(x, y + 4, 9, 4);
+        CreateFilledEllipse(center_x - 5, y + 1, 10, 5);
+        CreateFilledEllipse(x + width - 9, y + 4, 9, 4);
     } else if (outline) {
         CreateOutlineEllipse(x, y, width, height, border_width);
     } else {
-        CreateFilledEllipse(x, y, width, height);
+        CreateRoundedRect(x, y, width, height, std::max(2, height / 2), lv_color_black());
     }
+}
+
+void OledFaceDisplay::DrawSpeakingMouth() {
+    uint32_t phase = animation_tick_ % 4;
+    int center_x = LV_HOR_RES / 2;
+    int upper_lip_y = 12;
+    int upper_lip_width = 64;
+    int tooth_width = 9;
+    int tooth_height = 9;
+    int tooth_gap = 6;
+
+    static const lv_point_precise_t kLowerLipClosed[] = {
+        {32, 15}, {38, 21}, {50, 25}, {64, 26}, {78, 25}, {90, 21}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipMid[] = {
+        {32, 15}, {37, 25}, {50, 31}, {64, 33}, {78, 31}, {91, 25}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipOpen[] = {
+        {32, 15}, {36, 28}, {50, 36}, {64, 39}, {78, 36}, {92, 28}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipRelax[] = {
+        {32, 15}, {37, 23}, {50, 29}, {64, 31}, {78, 29}, {91, 23}, {96, 15},
+    };
+
+    const lv_point_precise_t* lower_lip_points = kLowerLipRelax;
+    switch (phase) {
+    case 0:
+        lower_lip_points = kLowerLipClosed;
+        break;
+    case 1:
+        lower_lip_points = kLowerLipMid;
+        break;
+    case 2:
+        lower_lip_points = kLowerLipOpen;
+        break;
+    default:
+        lower_lip_points = kLowerLipRelax;
+        break;
+    }
+
+    lv_obj_t* lower_lip = lv_line_create(face_layer_);
+    lv_line_set_points(lower_lip, lower_lip_points, 7);
+    lv_obj_set_pos(lower_lip, 0, 0);
+    lv_obj_set_style_line_color(lower_lip, lv_color_black(), 0);
+    lv_obj_set_style_line_width(lower_lip, 2, 0);
+    lv_obj_set_style_line_rounded(lower_lip, true, 0);
+
+    lv_obj_t* upper_lip = CreateRoundedRect(center_x - (upper_lip_width / 2), upper_lip_y, upper_lip_width, 3, 2, lv_color_black());
+    lv_obj_move_foreground(upper_lip);
+
+    int teeth_total_width = (tooth_width * 2) + tooth_gap;
+    int teeth_start_x = center_x - (teeth_total_width / 2);
+    int teeth_y = upper_lip_y + 3;
+
+    auto create_tooth = [&](int x) {
+        lv_obj_t* tooth = CreateRoundedRect(x, teeth_y, tooth_width, tooth_height, 2, lv_color_black());
+        lv_obj_move_foreground(tooth);
+    };
+
+    create_tooth(teeth_start_x);
+    create_tooth(teeth_start_x + tooth_width + tooth_gap);
 }
 
 void OledFaceDisplay::DrawTear(int center_x, int top_y, bool long_drop) {
@@ -570,6 +680,11 @@ void OledFaceDisplay::RenderFace() {
     }
 
     lv_obj_clean(face_layer_);
+
+    if (activity_mode_ == ActivityMode::SPEAKING) {
+        DrawSpeakingMouth();
+        return;
+    }
 
     auto preset = ResolveAnimatedPreset();
     DrawEye(kLeftEyeCenterX, kEyesCenterY, preset.left_eye);

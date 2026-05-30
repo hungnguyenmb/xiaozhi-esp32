@@ -96,7 +96,9 @@ private:
     void RenderFace();
     void DrawEye(int center_x, int center_y, EyeStyle style);
     void DrawMouth(int center_x, int center_y, MouthStyle style);
+    void DrawSpeakingMouth();
     void DrawTear(int center_x, int top_y, bool long_drop);
+    lv_obj_t* CreateRoundedRect(int x, int y, int width, int height, int radius, lv_color_t color);
     lv_obj_t* CreateFilledEllipse(int x, int y, int width, int height);
     lv_obj_t* CreateOutlineEllipse(int x, int y, int width, int height, int border_width);
 };

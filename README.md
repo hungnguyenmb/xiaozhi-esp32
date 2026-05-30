@@ -119,6 +119,11 @@ The firmware connects to the official [xiaozhi.me](https://xiaozhi.me) server by
 - Linux is better than Windows for faster compilation and fewer driver issues
 - This project uses Google C++ code style, please ensure compliance when submitting code
 
+### Project Structure
+
+* `main/boards`: Code for different development boards. To add a new board, please refer to [docs/custom-board.md](docs/custom-board.md).
+* `main/config`: Application configuration. Modify `lang_config.h` for language strings and sounds.
+
 ### Developer Documentation
 
 - [Custom Board Guide](docs/custom-board.md) - Learn how to create custom boards for XiaoZhi AI
