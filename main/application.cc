@@ -16,6 +16,7 @@
 #include <driver/gpio.h>
 #include <arpa/inet.h>
 #include <font_awesome.h>
+#include <wifi_manager.h>
 
 #define TAG "Application"
 
@@ -121,9 +122,14 @@ void Application::Initialize() {
                 break;
             }
             case NetworkEvent::Connected: {
-                std::string msg = Lang::Strings::CONNECTED_TO;
-                msg += data;
-                display->ShowNotification(msg.c_str(), 30000);
+                auto ip_address = WifiManager::GetInstance().GetIpAddress();
+                if (!ip_address.empty()) {
+                    display->ShowNotification("IP\n" + ip_address, 5000);
+                } else {
+                    std::string msg = Lang::Strings::CONNECTED_TO;
+                    msg += data;
+                    display->ShowNotification(msg.c_str(), 30000);
+                }
                 xEventGroupSetBits(event_group_, MAIN_EVENT_NETWORK_CONNECTED);
                 break;
             }

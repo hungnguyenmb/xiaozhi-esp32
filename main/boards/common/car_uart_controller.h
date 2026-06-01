@@ -495,10 +495,11 @@ public:
             [this](const PropertyList&) -> ReturnValue {
                 return ExecuteCommand("PING");
             });
-        RegisterTool("self.car.get_status", "Read the current remote status from the Arduino Nano car controller.", "STATUS");
-        RegisterTool("self.car.enter_remote_mode",
-            "Prepare the car controller for movement. This is an internal setup step. If you mention it to the user, keep it brief and do not describe controller modes.",
-            "MODE REMOTE");
+        // Temporarily disabled to keep public MCP tools under the server limit.
+        // RegisterTool("self.car.get_status", "Read the current remote status from the Arduino Nano car controller.", "STATUS");
+        // RegisterTool("self.car.enter_remote_mode",
+        //     "Prepare the car controller for movement. This is an internal setup step. If you mention it to the user, keep it brief and do not describe controller modes.",
+        //     "MODE REMOTE");
         RegisterLocalSoundTool("self.car.engine_start",
             BuildSoundOnlyToolDescription(
                 "Play the local engine-start sound without moving the car.",
@@ -602,22 +603,23 @@ public:
                 "\nSilence is preferred so the local engine and skid sound cues can be heard clearly.",
             "DRIFT_180_RIGHT",
             kDefaultDrift180Ms);
-        RegisterTimedMotionTool("self.car.test_left_wheel_forward",
-            BuildWheelDiagnosticToolDescription("Spin only the left wheel forward for a bounded duration."),
-            "LEFT_WHEEL_FORWARD",
-            kDefaultWheelTestMs);
-        RegisterTimedMotionTool("self.car.test_left_wheel_backward",
-            BuildWheelDiagnosticToolDescription("Spin only the left wheel backward for a bounded duration."),
-            "LEFT_WHEEL_BACKWARD",
-            kDefaultWheelTestMs);
-        RegisterTimedMotionTool("self.car.test_right_wheel_forward",
-            BuildWheelDiagnosticToolDescription("Spin only the right wheel forward for a bounded duration."),
-            "RIGHT_WHEEL_FORWARD",
-            kDefaultWheelTestMs);
-        RegisterTimedMotionTool("self.car.test_right_wheel_backward",
-            BuildWheelDiagnosticToolDescription("Spin only the right wheel backward for a bounded duration."),
-            "RIGHT_WHEEL_BACKWARD",
-            kDefaultWheelTestMs);
+        // Temporarily disabled to keep public MCP tools under the server limit.
+        // RegisterTimedMotionTool("self.car.test_left_wheel_forward",
+        //     BuildWheelDiagnosticToolDescription("Spin only the left wheel forward for a bounded duration."),
+        //     "LEFT_WHEEL_FORWARD",
+        //     kDefaultWheelTestMs);
+        // RegisterTimedMotionTool("self.car.test_left_wheel_backward",
+        //     BuildWheelDiagnosticToolDescription("Spin only the left wheel backward for a bounded duration."),
+        //     "LEFT_WHEEL_BACKWARD",
+        //     kDefaultWheelTestMs);
+        // RegisterTimedMotionTool("self.car.test_right_wheel_forward",
+        //     BuildWheelDiagnosticToolDescription("Spin only the right wheel forward for a bounded duration."),
+        //     "RIGHT_WHEEL_FORWARD",
+        //     kDefaultWheelTestMs);
+        // RegisterTimedMotionTool("self.car.test_right_wheel_backward",
+        //     BuildWheelDiagnosticToolDescription("Spin only the right wheel backward for a bounded duration."),
+        //     "RIGHT_WHEEL_BACKWARD",
+        //     kDefaultWheelTestMs);
         RegisterTimedMotionTool("self.car.probe_line_leds",
             BuildPeripheralDiagnosticToolDescription("Try to force the five line-sensor indicator LEDs with a short left-to-right sweep, then all-on pulse. Use this to check whether the existing line-sensor LEDs can be reused for expressive lighting without rewiring."),
             "LINE_LED_PROBE",

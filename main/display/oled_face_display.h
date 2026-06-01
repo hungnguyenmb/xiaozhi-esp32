@@ -68,7 +68,10 @@ private:
 
     lv_obj_t* root_ = nullptr;
     lv_obj_t* face_layer_ = nullptr;
+    lv_obj_t* notification_layer_ = nullptr;
+    lv_obj_t* notification_text_ = nullptr;
     lv_timer_t* anim_timer_ = nullptr;
+    esp_timer_handle_t notification_restore_timer_ = nullptr;
 
     std::string current_emotion_ = "neutral";
     std::string pending_emotion_;
@@ -78,6 +81,7 @@ private:
     uint32_t animation_tick_ = 0;
 
     static void AnimationTimerCb(lv_timer_t* timer);
+    static void HideNotificationTimerCb(void* arg);
     void OnAnimationTick();
     void ResetAnimation();
     void ApplyEmotionNow(std::string emotion);
@@ -96,7 +100,9 @@ private:
     void RenderFace();
     void DrawEye(int center_x, int center_y, EyeStyle style);
     void DrawMouth(int center_x, int center_y, MouthStyle style);
+    void DrawSpeakingMouth();
     void DrawTear(int center_x, int top_y, bool long_drop);
+    lv_obj_t* CreateRoundedRect(int x, int y, int width, int height, int radius, lv_color_t color);
     lv_obj_t* CreateFilledEllipse(int x, int y, int width, int height);
     lv_obj_t* CreateOutlineEllipse(int x, int y, int width, int height, int border_width);
 };

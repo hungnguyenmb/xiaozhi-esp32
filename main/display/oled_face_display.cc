@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <esp_err.h>
 #include <esp_log.h>
 
 #define TAG "OledFaceDisplay"
@@ -27,9 +28,26 @@ bool IsDeferredEmotion(std::string_view emotion) {
 OledFaceDisplay::OledFaceDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
     int width, int height, bool mirror_x, bool mirror_y)
     : OledDisplay(panel_io, panel, width, height, mirror_x, mirror_y) {
+    esp_timer_create_args_t timer_args = {
+        .callback = HideNotificationTimerCb,
+        .arg = this,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "oled_face_notice",
+        .skip_unhandled_events = true
+    };
+    auto err = esp_timer_create(&timer_args, &notification_restore_timer_);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create notification restore timer: %d", err);
+        notification_restore_timer_ = nullptr;
+    }
 }
 
 OledFaceDisplay::~OledFaceDisplay() {
+    if (notification_restore_timer_ != nullptr) {
+        esp_timer_stop(notification_restore_timer_);
+        esp_timer_delete(notification_restore_timer_);
+        notification_restore_timer_ = nullptr;
+    }
     if (anim_timer_ != nullptr) {
         lv_timer_del(anim_timer_);
         anim_timer_ = nullptr;
@@ -38,6 +56,8 @@ OledFaceDisplay::~OledFaceDisplay() {
         lv_obj_del(root_);
         root_ = nullptr;
         face_layer_ = nullptr;
+        notification_layer_ = nullptr;
+        notification_text_ = nullptr;
     }
 }
 
@@ -108,8 +128,49 @@ void OledFaceDisplay::SetStatus(const char* status) {
 }
 
 void OledFaceDisplay::ShowNotification(const char* notification, int duration_ms) {
-    (void)notification;
-    (void)duration_ms;
+    if (!setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowNotification('%s') called before SetupUI() - message will be lost!",
+            notification == nullptr ? "" : notification);
+        return;
+    }
+
+    DisplayLockGuard lock(this);
+    if (root_ == nullptr || face_layer_ == nullptr) {
+        return;
+    }
+
+    if (notification_layer_ == nullptr) {
+        notification_layer_ = lv_obj_create(root_);
+        lv_obj_set_size(notification_layer_, LV_HOR_RES, LV_VER_RES);
+        lv_obj_set_style_bg_color(notification_layer_, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(notification_layer_, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(notification_layer_, 0, 0);
+        lv_obj_set_style_pad_all(notification_layer_, 0, 0);
+        lv_obj_set_scrollbar_mode(notification_layer_, LV_SCROLLBAR_MODE_OFF);
+
+        notification_text_ = lv_label_create(notification_layer_);
+        lv_obj_set_width(notification_text_, LV_HOR_RES - 8);
+        lv_label_set_long_mode(notification_text_, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(notification_text_, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(notification_text_, lv_color_black(), 0);
+        lv_obj_center(notification_text_);
+    }
+
+    lv_label_set_text(notification_text_, notification == nullptr ? "" : notification);
+    lv_obj_center(notification_text_);
+    lv_obj_add_flag(face_layer_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(notification_layer_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(notification_layer_);
+
+    if (notification_restore_timer_ != nullptr) {
+        esp_timer_stop(notification_restore_timer_);
+        if (duration_ms > 0) {
+            auto err = esp_timer_start_once(notification_restore_timer_, static_cast<uint64_t>(duration_ms) * 1000);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to start notification restore timer: %d", err);
+            }
+        }
+    }
 }
 
 void OledFaceDisplay::SetChatMessage(const char* role, const char* content) {
@@ -150,6 +211,22 @@ void OledFaceDisplay::AnimationTimerCb(lv_timer_t* timer) {
     auto* self = static_cast<OledFaceDisplay*>(lv_timer_get_user_data(timer));
     if (self != nullptr) {
         self->OnAnimationTick();
+    }
+}
+
+void OledFaceDisplay::HideNotificationTimerCb(void* arg) {
+    auto* self = static_cast<OledFaceDisplay*>(arg);
+    if (self == nullptr) {
+        return;
+    }
+
+    DisplayLockGuard lock(self);
+    if (self->notification_layer_ != nullptr) {
+        lv_obj_add_flag(self->notification_layer_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (self->face_layer_ != nullptr) {
+        lv_obj_remove_flag(self->face_layer_, LV_OBJ_FLAG_HIDDEN);
+        self->RenderFace();
     }
 }
 
@@ -564,12 +641,91 @@ void OledFaceDisplay::DrawTear(int center_x, int top_y, bool long_drop) {
     }
 }
 
+lv_obj_t* OledFaceDisplay::CreateRoundedRect(int x, int y, int width, int height, int radius, lv_color_t color) {
+    lv_obj_t* obj = lv_obj_create(face_layer_);
+    lv_obj_set_pos(obj, x, y);
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_style_radius(obj, radius, 0);
+    lv_obj_set_style_bg_color(obj, color, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(obj, 0, 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+    return obj;
+}
+
+void OledFaceDisplay::DrawSpeakingMouth() {
+    uint32_t phase = animation_tick_ % 4;
+    int center_x = LV_HOR_RES / 2;
+    int upper_lip_y = 12;
+    int upper_lip_width = 64;
+    int tooth_width = 9;
+    int tooth_height = 9;
+    int tooth_gap = 6;
+
+    static const lv_point_precise_t kLowerLipClosed[] = {
+        {32, 15}, {38, 21}, {50, 25}, {64, 26}, {78, 25}, {90, 21}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipMid[] = {
+        {32, 15}, {37, 25}, {50, 31}, {64, 33}, {78, 31}, {91, 25}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipOpen[] = {
+        {32, 15}, {36, 28}, {50, 36}, {64, 39}, {78, 36}, {92, 28}, {96, 15},
+    };
+    static const lv_point_precise_t kLowerLipRelax[] = {
+        {32, 15}, {37, 23}, {50, 29}, {64, 31}, {78, 29}, {91, 23}, {96, 15},
+    };
+
+    const lv_point_precise_t* lower_lip_points = kLowerLipRelax;
+    switch (phase) {
+    case 0:
+        lower_lip_points = kLowerLipClosed;
+        break;
+    case 1:
+        lower_lip_points = kLowerLipMid;
+        break;
+    case 2:
+        lower_lip_points = kLowerLipOpen;
+        break;
+    default:
+        lower_lip_points = kLowerLipRelax;
+        break;
+    }
+
+    lv_obj_t* lower_lip = lv_line_create(face_layer_);
+    lv_line_set_points(lower_lip, lower_lip_points, 7);
+    lv_obj_set_pos(lower_lip, 0, 0);
+    lv_obj_set_style_line_color(lower_lip, lv_color_black(), 0);
+    lv_obj_set_style_line_width(lower_lip, 2, 0);
+    lv_obj_set_style_line_rounded(lower_lip, true, 0);
+
+    lv_obj_t* upper_lip = CreateRoundedRect(center_x - (upper_lip_width / 2), upper_lip_y, upper_lip_width, 3, 2, lv_color_black());
+    lv_obj_move_foreground(upper_lip);
+
+    int teeth_total_width = (tooth_width * 2) + tooth_gap;
+    int teeth_start_x = center_x - (teeth_total_width / 2);
+    int teeth_y = upper_lip_y + 3;
+
+    auto create_tooth = [&](int x) {
+        lv_obj_t* tooth = CreateRoundedRect(x, teeth_y, tooth_width, tooth_height, 2, lv_color_black());
+        lv_obj_move_foreground(tooth);
+    };
+
+    create_tooth(teeth_start_x);
+    create_tooth(teeth_start_x + tooth_width + tooth_gap);
+}
+
 void OledFaceDisplay::RenderFace() {
     if (face_layer_ == nullptr) {
         return;
     }
 
     lv_obj_clean(face_layer_);
+
+    if (activity_mode_ == ActivityMode::SPEAKING) {
+        DrawSpeakingMouth();
+        return;
+    }
 
     auto preset = ResolveAnimatedPreset();
     DrawEye(kLeftEyeCenterX, kEyesCenterY, preset.left_eye);

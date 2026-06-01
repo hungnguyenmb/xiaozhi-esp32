@@ -113,7 +113,10 @@ void WifiBoard::OnNetworkEvent(NetworkEvent event, const std::string& data) {
             Blufi::GetInstance().deinit();
 #endif
             in_config_mode_ = false;
-            ESP_LOGI(TAG, "Connected to WiFi: %s", data.c_str());
+            {
+                auto ip_address = WifiManager::GetInstance().GetIpAddress();
+                ESP_LOGI(TAG, "Connected to WiFi: %s, IP: %s", data.c_str(), ip_address.c_str());
+            }
             break;
         case NetworkEvent::Scanning:
             ESP_LOGI(TAG, "WiFi scanning");
