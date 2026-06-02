@@ -193,6 +193,28 @@ void OledFaceDisplay::SetEmotion(const char* emotion) {
     RenderFace();
 }
 
+void OledFaceDisplay::ForceEmotion(const char* emotion) {
+    DisplayLockGuard lock(this);
+    std::string next_emotion = (emotion != nullptr && emotion[0] != '\0') ? emotion : "neutral";
+
+    ESP_LOGI(TAG, "ForceEmotion: %s", next_emotion.c_str());
+    activity_mode_ = ActivityMode::IDLE;
+    defer_emotion_until_speaking_ = false;
+    pending_emotion_.clear();
+    if (notification_restore_timer_ != nullptr) {
+        esp_timer_stop(notification_restore_timer_);
+    }
+    if (notification_layer_ != nullptr) {
+        lv_obj_add_flag(notification_layer_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (face_layer_ != nullptr) {
+        lv_obj_remove_flag(face_layer_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(face_layer_);
+    }
+    ApplyEmotionNow(std::move(next_emotion));
+    RenderFace();
+}
+
 void OledFaceDisplay::SetPowerSaveMode(bool on) {
     DisplayLockGuard lock(this);
     power_save_mode_ = on;

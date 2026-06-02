@@ -14,6 +14,48 @@ config XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE
         and install a newer firmware image. This is useful for local custom builds
         that still need Xiaozhi server configuration, MQTT/WebSocket setup, and MCP.
 
+choice CONTROL_CAR_ROLE
+    prompt "Control car firmware role"
+    default CONTROL_CAR_ROLE_NONE
+    help
+        Select the firmware role for the control-car parent/child LAN workflow.
+
+    config CONTROL_CAR_ROLE_NONE
+        bool "None"
+
+    config CONTROL_CAR_ROLE_PARENT
+        bool "Parent car"
+
+    config CONTROL_CAR_ROLE_CHILD
+        bool "Child car"
+endchoice
+
+config CONTROL_CAR_DEFAULT_CHILD_IP
+    string "Default child car LAN IP"
+    default ""
+    depends on CONTROL_CAR_ROLE_PARENT
+    help
+        Optional default LAN IP for the child car. Keep empty until the real
+        child IP is known; the parent MCP tool can still receive child_ip as
+        a runtime argument.
+
+config CONTROL_CAR_CHILD_COMMAND_PORT
+    int "Child car command server port"
+    default 8081
+    range 1024 65535
+    help
+        HTTP port used by child firmware for /child/ping, /child/stop, and
+        /child/command.
+
+config CONTROL_CAR_PARENT_WEB_PORT
+    int "Parent car web config server port"
+    default 8080
+    range 1024 65535
+    depends on CONTROL_CAR_ROLE_PARENT
+    help
+        HTTP port used by parent firmware for the simple LAN web config UI
+        and /api/children endpoints.
+
 choice
     prompt "Flash Assets"
     default FLASH_DEFAULT_ASSETS if !USE_EMOTE_MESSAGE_STYLE
@@ -132,6 +174,9 @@ choice BOARD_TYPE
         Board type. 开发板类型
     config BOARD_TYPE_BREAD_COMPACT_WIFI
         bool "Bread Compact WiFi (面包板)"
+        depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_XIAOZHI_CAR_MINI_S3
+        bool "Xiaozhi Car Mini S3"
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
         bool "Bread Compact WiFi + LCD (面包板)"
@@ -583,7 +628,7 @@ choice ESP_S3_LCD_EV_Board_Version_TYPE
 endchoice
 
 choice DISPLAY_OLED_TYPE
-    depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_ML307 || BOARD_TYPE_BREAD_COMPACT_NT26 || BOARD_TYPE_BREAD_COMPACT_ESP32 || BOARD_TYPE_HU_087
+    depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_XIAOZHI_CAR_MINI_S3 || BOARD_TYPE_BREAD_COMPACT_ML307 || BOARD_TYPE_BREAD_COMPACT_NT26 || BOARD_TYPE_BREAD_COMPACT_ESP32 || BOARD_TYPE_HU_087
     prompt "OLED Type"
     default OLED_SSD1306_128X32
     help

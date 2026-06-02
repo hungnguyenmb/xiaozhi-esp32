@@ -16,6 +16,7 @@ public:
     void ShowNotification(const char* notification, int duration_ms = 3000) override;
     void SetChatMessage(const char* role, const char* content) override;
     void SetEmotion(const char* emotion) override;
+    void ForceEmotion(const char* emotion) override;
     void SetPowerSaveMode(bool on) override;
     void UpdateStatusBar(bool update_all = false) override;
 

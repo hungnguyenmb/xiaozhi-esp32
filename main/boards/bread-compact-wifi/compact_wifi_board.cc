@@ -9,6 +9,10 @@
 #include "lamp_controller.h"
 #include "child_robot_bridge_controller.h"
 #include "car_uart_controller.h"
+#include "control_car/child/child_command_server.h"
+#include "control_car/child/child_emotion_controller.h"
+#include "control_car/parent/parent_child_client.h"
+#include "control_car/parent/parent_web_config_server.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 
@@ -33,6 +37,8 @@ private:
     Button touch_button_;
     Button volume_up_button_;
     Button volume_down_button_;
+    control_car::ChildCommandServer child_command_server_;
+    control_car::ParentWebConfigServer parent_web_config_server_;
 
     void InitializeDisplayI2c() {
         i2c_master_bus_config_t bus_config = {
@@ -153,6 +159,8 @@ private:
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
         static ChildRobotBridgeController child_robot_controller;
+        static control_car::ChildEmotionController child_emotion_controller;
+        static control_car::ParentChildClient parent_child_client;
         static CarUartController car_controller(CAR_UART_PORT_NUM, CAR_UART_TXD, CAR_UART_RXD, CAR_UART_BAUD_RATE, CAR_UART_BUF_SIZE);
     }
 
@@ -186,6 +194,12 @@ public:
 
     virtual Display* GetDisplay() override {
         return display_;
+    }
+
+    virtual void StartNetwork() override {
+        WifiBoard::StartNetwork();
+        child_command_server_.Start();
+        parent_web_config_server_.Start();
     }
 };
 

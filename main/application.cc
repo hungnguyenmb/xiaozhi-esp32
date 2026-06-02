@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "assets.h"
 #include "settings.h"
+#include "control_car_role.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -68,6 +69,10 @@ void Application::Initialize() {
     display->SetupUI();
     // Print board name/version info
     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
+    if (control_car::HasRole()) {
+        ESP_LOGI(TAG, "Control car firmware role=%s board=%s", control_car::RoleName(), BOARD_NAME);
+        display->ShowNotification(control_car::RoleName(), 2000);
+    }
 
     // Setup the audio service
     auto codec = board.GetAudioCodec();
@@ -124,7 +129,13 @@ void Application::Initialize() {
             case NetworkEvent::Connected: {
                 auto ip_address = WifiManager::GetInstance().GetIpAddress();
                 if (!ip_address.empty()) {
-                    display->ShowNotification("IP\n" + ip_address, 5000);
+                    std::string notification;
+                    if (control_car::HasRole()) {
+                        notification = std::string(control_car::RoleName()) + "\n" + ip_address;
+                    } else {
+                        notification = "IP\n" + ip_address;
+                    }
+                    display->ShowNotification(notification, 5000);
                 } else {
                     std::string msg = Lang::Strings::CONNECTED_TO;
                     msg += data;
@@ -319,7 +330,7 @@ void Application::HandleActivationDoneEvent() {
     // Release OTA object after activation is complete
     ota_.reset();
     auto& board = Board::GetInstance();
-    board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+    board.SetPowerSaveLevel(control_car::HasRole() ? PowerSaveLevel::PERFORMANCE : PowerSaveLevel::LOW_POWER);
 
     Schedule([this]() {
         // Play the success sound to indicate the device is ready
@@ -385,7 +396,7 @@ void Application::CheckAssetsVersion() {
             });
         });
 
-        board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+        board.SetPowerSaveLevel(control_car::HasRole() ? PowerSaveLevel::PERFORMANCE : PowerSaveLevel::LOW_POWER);
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         if (!success) {
@@ -528,7 +539,7 @@ void Application::InitializeProtocol() {
     });
     
     protocol_->OnAudioChannelClosed([this, &board]() {
-        board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+        board.SetPowerSaveLevel(control_car::HasRole() ? PowerSaveLevel::PERFORMANCE : PowerSaveLevel::LOW_POWER);
         Schedule([this]() {
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");

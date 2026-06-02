@@ -2,17 +2,18 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-build_dir="$repo_root/build-bread-128x64"
-sdkconfig_file="sdkconfig.bread_compact_wifi_128x64_vi"
-board_name="bread-compact-wifi-128x64"
-board_type="bread-compact-wifi"
+build_dir="${CONTROL_CAR_BUILD_DIR:-$repo_root/build-bread-128x64}"
+sdkconfig_file="${CONTROL_CAR_SDKCONFIG:-sdkconfig.bread_compact_wifi_128x64_vi}"
+board_name="${CONTROL_CAR_BOARD_NAME:-bread-compact-wifi-128x64}"
+board_type="${CONTROL_CAR_BOARD_TYPE:-bread-compact-wifi}"
 
 guard_board_sdkconfig() {
-    python3 - "$repo_root/$sdkconfig_file" <<'PY'
+    python3 - "$repo_root/$sdkconfig_file" "${CONTROL_CAR_ROLE:-}" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+role = sys.argv[2].upper()
 text = path.read_text()
 replacements = {
     'CONFIG_XIAOZHI_DISABLE_AUTO_FIRMWARE_UPGRADE=y': [
@@ -81,6 +82,45 @@ for stale in [
     if stale in text:
         text = text.replace(stale + '\n', '')
         changed = True
+
+def normalize_choice(text, choices):
+    desired_lines = []
+    for name, enabled in choices:
+        desired_lines.append(f"{name}=y" if enabled else f"# {name} is not set")
+
+    filtered = []
+    names = {name for name, _ in choices}
+    for line in text.splitlines():
+        if any(line == f"{name}=y" or line == f"# {name} is not set" for name in names):
+            continue
+        filtered.append(line)
+
+    return "\n".join(filtered + desired_lines) + "\n"
+
+normalized_text = normalize_choice(text, [
+    ("CONFIG_LANGUAGE_ZH_CN", False),
+    ("CONFIG_LANGUAGE_VI_VN", True),
+])
+normalized_text = normalize_choice(normalized_text, [
+    ("CONFIG_OLED_SSD1306_128X32", False),
+    ("CONFIG_OLED_SSD1306_128X64", True),
+])
+if role == "PARENT":
+    normalized_text = normalize_choice(normalized_text, [
+        ("CONFIG_CONTROL_CAR_ROLE_NONE", False),
+        ("CONFIG_CONTROL_CAR_ROLE_PARENT", True),
+        ("CONFIG_CONTROL_CAR_ROLE_CHILD", False),
+    ])
+elif role == "CHILD":
+    normalized_text = normalize_choice(normalized_text, [
+        ("CONFIG_CONTROL_CAR_ROLE_NONE", False),
+        ("CONFIG_CONTROL_CAR_ROLE_PARENT", False),
+        ("CONFIG_CONTROL_CAR_ROLE_CHILD", True),
+    ])
+
+if normalized_text != text:
+    text = normalized_text
+    changed = True
 
 if changed:
     path.write_text(text)
@@ -198,7 +238,9 @@ idf_py=(
 
 ensure_build() {
     if [[ ! -f "$build_dir/CMakeCache.txt" ]]; then
-        "${idf_py[@]}" set-target esp32s3 build
+        "${idf_py[@]}" set-target esp32s3
+        guard_board_sdkconfig
+        "${idf_py[@]}" build
     else
         "${idf_py[@]}" build
     fi
