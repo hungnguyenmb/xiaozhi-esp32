@@ -19,8 +19,6 @@
 class CarUartController {
 private:
     static constexpr const char* TAG = "CarUartController";
-    static constexpr int kNudgeDriveMs = 180;
-    static constexpr int kNudgeTurnMs = 280;
     static constexpr int kDefaultDriveMs = 500;
     static constexpr int kDefaultTurnMs = 360;
     static constexpr int kDefaultApproachMs = 420;
@@ -57,7 +55,8 @@ private:
             "Do not add a completion sentence and do not repeat the same idea in multiple sentences.\n"
             "Do not mention internal details like MODE, STATUS, STOP, REMOTE, UART, or raw durations unless the user explicitly asks for debugging.";
         if (supports_duration) {
-            description += "\nUse `duration_ms` when the user asks for a specific amount or a longer bounded motion.";
+            description += "\nUse `duration_ms` when the user asks for a specific amount or a bounded motion.";
+            description += "\nFor tiny adjustment phrases like `một chút`, `nhích nhẹ`, `một nhịp`, or `bẻ nhẹ`, use a short `duration_ms` instead of looking for a separate nudge tool: about 180 ms for forward/backward and about 280 ms for left/right turns.";
         }
         return description;
     }
@@ -511,34 +510,6 @@ public:
             [this](const PropertyList&) -> ReturnValue {
                 return RunSmokeTest();
             });
-        mcp_server.AddTool("self.car.nudge_forward",
-            BuildTaskMotionToolDescription("Move the car forward for a very short, safe pulse and then stop automatically. Prefer this for tiny adjustments such as 'một chút', 'nhích nhẹ', or 'một nhịp'.", false),
-            PropertyList(),
-            [this](const PropertyList&) -> ReturnValue {
-                std::lock_guard<std::mutex> lock(mutex_);
-                return ExecuteTimedCommandLocked("FORWARD", kNudgeDriveMs);
-            });
-        mcp_server.AddTool("self.car.nudge_backward",
-            BuildTaskMotionToolDescription("Move the car backward for a very short, safe pulse and then stop automatically. Prefer this for tiny adjustments such as 'một chút', 'nhích nhẹ', or 'một nhịp'.", false),
-            PropertyList(),
-            [this](const PropertyList&) -> ReturnValue {
-                std::lock_guard<std::mutex> lock(mutex_);
-                return ExecuteTimedCommandLocked("BACKWARD", kNudgeDriveMs);
-            });
-        mcp_server.AddTool("self.car.nudge_left",
-            BuildTaskMotionToolDescription("Turn the car left for a very short, safe pulse and then stop automatically. Prefer this for tiny adjustments such as 'một chút', 'bẻ nhẹ', or 'một nhịp'.", false),
-            PropertyList(),
-            [this](const PropertyList&) -> ReturnValue {
-                std::lock_guard<std::mutex> lock(mutex_);
-                return ExecuteTimedCommandLocked("LEFT", kNudgeTurnMs);
-            });
-        mcp_server.AddTool("self.car.nudge_right",
-            BuildTaskMotionToolDescription("Turn the car right for a very short, safe pulse and then stop automatically. Prefer this for tiny adjustments such as 'một chút', 'bẻ nhẹ', or 'một nhịp'.", false),
-            PropertyList(),
-            [this](const PropertyList&) -> ReturnValue {
-                std::lock_guard<std::mutex> lock(mutex_);
-                return ExecuteTimedCommandLocked("RIGHT", kNudgeTurnMs);
-            });
         RegisterTool("self.car.stop", "Immediately stop the car. After success, just say the car has stopped. Do not mention internal controller states unless the user asks for debugging.", "STOP");
         RegisterTimedMotionTool("self.car.forward",
             BuildTaskMotionToolDescription("Drive the car forward for a bounded duration and wait until the movement is complete before you confirm success to the user.", true),
@@ -620,11 +591,6 @@ public:
         //     BuildWheelDiagnosticToolDescription("Spin only the right wheel backward for a bounded duration."),
         //     "RIGHT_WHEEL_BACKWARD",
         //     kDefaultWheelTestMs);
-        RegisterTimedMotionTool("self.car.probe_line_leds",
-            BuildPeripheralDiagnosticToolDescription("Try to force the five line-sensor indicator LEDs with a short left-to-right sweep, then all-on pulse. Use this to check whether the existing line-sensor LEDs can be reused for expressive lighting without rewiring."),
-            "LINE_LED_PROBE",
-            kDefaultLineLedProbeMs);
-
         ESP_LOGI(TAG, "UART bridge ready on port=%d tx=%d rx=%d baud=%d", uart_num_, tx_pin_, rx_pin_, baud_rate_);
         StartBootSmokeTestTask();
     }
