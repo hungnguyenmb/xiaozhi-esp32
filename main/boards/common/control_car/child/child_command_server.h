@@ -140,9 +140,10 @@ private:
         if (display != nullptr) {
             display->ForceEmotion("neutral");
         }
+        Application::GetInstance().GetAudioService().ResetDecoder();
 
         auto* root = BuildBaseResponse(true);
-        cJSON_AddStringToObject(root, "result", "stopped");
+        cJSON_AddStringToObject(root, "result", "stopped_audio_reset");
         ESP_LOGI(TAG, "POST /child/stop");
         return SendJson(req, root);
     }
@@ -169,11 +170,12 @@ private:
 
         std::string result;
         if (action == "stop") {
-            result = "stopped";
+            result = "stopped_audio_reset";
             auto* display = Board::GetInstance().GetDisplay();
             if (display != nullptr) {
                 display->ForceEmotion("neutral");
             }
+            Application::GetInstance().GetAudioService().ResetDecoder();
         } else if (ChildEmotionController::IsSoundPreset(action)) {
             result = ChildEmotionController::ApplySoundPreset(action);
         } else if (action == "happy" || action == "joy" || action == "vui" || action == "vui_suong" ||

@@ -6,7 +6,6 @@
 #include "button.h"
 #include "config.h"
 #include "mcp_server.h"
-#include "lamp_controller.h"
 #include "child_robot_bridge_controller.h"
 #include "car_uart_controller.h"
 #include "control_car/child/child_command_server.h"
@@ -157,8 +156,10 @@ private:
 
     // 物联网初始化，逐步迁移到 MCP 协议
     void InitializeTools() {
-        static LampController lamp(LAMP_GPIO);
-        static ChildRobotBridgeController child_robot_controller;
+        if (!control_car::IsParent()) {
+            static ChildRobotBridgeController child_robot_controller;
+            (void)child_robot_controller;
+        }
         static control_car::ChildEmotionController child_emotion_controller;
         static control_car::ParentChildClient parent_child_client;
         static CarUartController car_controller(CAR_UART_PORT_NUM, CAR_UART_TXD, CAR_UART_RXD, CAR_UART_BAUD_RATE, CAR_UART_BUF_SIZE);
